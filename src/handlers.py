@@ -24,10 +24,13 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return await _deny(update)
     await update.message.reply_text(
         "Coach bot online.\n\n"
-        "Send a *meal photo* to log food.\n"
-        "Send gym text like `Bench 80kg 4x5 RPE 8` to log a set.\n"
-        "Reply to sleep check-in with `7 4` (hours quality).\n\n"
-        "Commands: /summary /week /goals /setgoals /recovery /streak /pb",
+        "🍱 *Food* — send a photo, or just describe it:\n"
+        "`I had 100g chicken, rice and salad`\n\n"
+        "🏋️ *Gym* — prefix with GYM:\n"
+        "`GYM Bench 80kg 4x5 RPE 8`\n\n"
+        "😴 *Sleep* — prefix with SLEEP or just two numbers:\n"
+        "`SLEEP 7.5 4` or `7.5 4`\n\n"
+        "Commands: /summary /week /goals /recovery /streak /pb",
         parse_mode="Markdown",
     )
 
@@ -111,7 +114,8 @@ async def handle_food_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def handle_gym_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not _is_authorised(update):
         return await _deny(update)
-    text = update.message.text.strip()
+    import re
+    text = re.sub(r"^\s*(gym|training|workout)\s*", "", update.message.text.strip(), flags=re.IGNORECASE)
     parsed = claude_ai.parse_gym_entry(text)
     last = sheets.get_last_session(parsed["exercise"])
     pb = sheets.get_pb(parsed["exercise"])
@@ -146,10 +150,12 @@ async def handle_gym_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ── Sleep check-in reply ──────────────────────────────────────────────────────
 
 async def handle_sleep_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Expects message text like '7 4' (hours quality)."""
+    """Expects message text like '7 4' or 'SLEEP 7 4' (hours quality)."""
     if not _is_authorised(update):
         return await _deny(update)
-    parts = update.message.text.strip().split()
+    import re
+    cleaned = re.sub(r"^\s*(sleep|recovery|slept)\s*", "", update.message.text.strip(), flags=re.IGNORECASE)
+    parts = cleaned.strip().split()
     if len(parts) != 2:
         await update.message.reply_text("Format: `hours quality` e.g. `7 4`", parse_mode="Markdown")
         return

@@ -48,10 +48,10 @@ async def route_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await handle_food_text(update, ctx)
     else:
         await update.message.reply_text(
-            "Not sure what that is. Try:\n"
-            "• A meal photo or description (e.g. `I had 100g chicken and rice`)\n"
-            "• A gym set (e.g. `Bench 80kg 4x5 RPE 8`)\n"
-            "• Sleep log (e.g. `7.5 4`)",
+            "Logged as food — if that's wrong, prefix your message:\n"
+            "• `GYM Bench 80kg 4x5 RPE 8` for gym\n"
+            "• `SLEEP 7.5 4` or just `7.5 4` for sleep\n"
+            "• Anything else is treated as food",
             parse_mode="Markdown",
         )
 
