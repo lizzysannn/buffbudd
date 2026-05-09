@@ -72,6 +72,40 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Error analysing photo:\n`{err[-800:]}`", parse_mode="Markdown")
 
 
+# ── Food text ─────────────────────────────────────────────────────────────────
+
+async def handle_food_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _is_authorised(update):
+        return await _deny(update)
+    text = update.message.text.strip()
+    await update.message.reply_text("Analysing meal...")
+    try:
+        macros = claude_ai.analyse_food_text(text)
+        sheets.log_food(
+            macros["description"],
+            macros["calories"],
+            macros["protein"],
+            macros["carbs"],
+            macros["fats"],
+        )
+        totals = sheets.get_today_totals()
+        msg = (
+            f"*{macros['description']}* logged.\n"
+            f"Cal: {macros['calories']} | P: {macros['protein']}g | "
+            f"C: {macros['carbs']}g | F: {macros['fats']}g\n"
+            f"_{macros['note']}_\n\n"
+            f"Today so far: {totals['calories']} cal / {DEFAULT_CALORIES} | "
+            f"Protein: {totals['protein']:.0f}g / {DEFAULT_PROTEIN}g"
+        )
+        if totals["protein"] < DEFAULT_PROTEIN * 0.5 and totals["meals"] >= 2:
+            msg += "\n\n*Protein is low — prioritise it in your next meal.*"
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    except Exception as e:
+        import traceback
+        err = traceback.format_exc()
+        await update.message.reply_text(f"Error logging meal:\n`{err[-800:]}`", parse_mode="Markdown")
+
+
 # ── Gym text ──────────────────────────────────────────────────────────────────
 
 async def handle_gym_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):

@@ -13,7 +13,7 @@ from src.config import TELEGRAM_BOT_TOKEN
 from src.handlers import (
     cmd_start, cmd_summary, cmd_week, cmd_goals, cmd_setgoals,
     cmd_recovery, cmd_streak, cmd_pb,
-    handle_photo, handle_gym_text, handle_sleep_reply,
+    handle_photo, handle_gym_text, handle_sleep_reply, handle_food_text,
 )
 from src.router import classify_text
 from src.scheduler import build_scheduler
@@ -44,10 +44,14 @@ async def route_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await handle_gym_text(update, ctx)
     elif kind == "sleep":
         await handle_sleep_reply(update, ctx)
+    elif kind == "food":
+        await handle_food_text(update, ctx)
     else:
         await update.message.reply_text(
-            "Send a meal photo, a gym set (e.g. `Squat 100kg 3x5 RPE 8`), "
-            "or reply to sleep check-in with `hours quality`.",
+            "Not sure what that is. Try:\n"
+            "• A meal photo or description (e.g. `I had 100g chicken and rice`)\n"
+            "• A gym set (e.g. `Bench 80kg 4x5 RPE 8`)\n"
+            "• Sleep log (e.g. `7.5 4`)",
             parse_mode="Markdown",
         )
 

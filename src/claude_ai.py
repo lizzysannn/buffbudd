@@ -54,6 +54,29 @@ def _parse_macro_response(text: str) -> dict:
     }
 
 
+def analyse_food_text(text: str) -> dict:
+    """Return estimated macros from a text meal description."""
+    prompt = (
+        "You are a precise sports nutritionist AI. "
+        "Analyse this meal description and estimate macros. "
+        "Reply in this exact format, nothing else:\n"
+        "DESCRIPTION: <brief meal description>\n"
+        "CALORIES: <integer>\n"
+        "PROTEIN: <grams as decimal>\n"
+        "CARBS: <grams as decimal>\n"
+        "FATS: <grams as decimal>\n"
+        "CONFIDENCE: <low|medium|high>\n"
+        "NOTE: <one-line note about your estimate>\n\n"
+        f"Meal: {text}"
+    )
+    response = client.messages.create(
+        model=CLAUDE_MODEL,
+        max_tokens=300,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return _parse_macro_response(response.content[0].text)
+
+
 def parse_gym_entry(text: str) -> dict:
     """Parse free-text gym log like 'Bench 80kg 4x5 RPE 8'."""
     prompt = (
