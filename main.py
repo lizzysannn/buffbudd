@@ -1,21 +1,17 @@
-"""Entry point — builds the bot, registers handlers, starts the scheduler."""
+"""Entry point — Buff Buddy fitness bot."""
 import logging
 import asyncio
 from telegram import Update
 from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    filters,
-    ContextTypes,
+    Application, CommandHandler, MessageHandler,
+    CallbackQueryHandler, filters, ContextTypes,
 )
 from src.config import TELEGRAM_BOT_TOKEN
 from src.handlers import (
     cmd_start, cmd_summary, cmd_week, cmd_goals, cmd_setgoals,
     cmd_recovery, cmd_streak, cmd_pb,
-    handle_photo, handle_gym_text, handle_sleep_reply, handle_food_text,
+    handle_photo, handle_message, handle_callback,
 )
-from src.router import classify_text
 from src.scheduler import build_scheduler
 
 logging.basicConfig(
@@ -36,26 +32,6 @@ async def _post_shutdown(app: Application) -> None:
         scheduler.shutdown(wait=False)
 
 
-async def route_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Route plain text to gym or sleep handler."""
-    text = update.message.text or ""
-    kind = classify_text(text)
-    if kind == "gym":
-        await handle_gym_text(update, ctx)
-    elif kind == "sleep":
-        await handle_sleep_reply(update, ctx)
-    elif kind == "food":
-        await handle_food_text(update, ctx)
-    else:
-        await update.message.reply_text(
-            "Logged as food — if that's wrong, prefix your message:\n"
-            "• `GYM Bench 80kg 4x5 RPE 8` for gym\n"
-            "• `SLEEP 7.5 4` or just `7.5 4` for sleep\n"
-            "• Anything else is treated as food",
-            parse_mode="Markdown",
-        )
-
-
 def main():
     app = (
         Application.builder()
@@ -74,9 +50,10 @@ def main():
     app.add_handler(CommandHandler("streak", cmd_streak))
     app.add_handler(CommandHandler("pb", cmd_pb))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, route_text))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CallbackQueryHandler(handle_callback))
 
-    logging.info("Bot starting...")
+    logging.info("Buff Buddy starting...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

@@ -35,5 +35,8 @@ SHEET_FOOD = "Food Log"
 SHEET_GYM = "Gym Log"
 SHEET_SLEEP = "Sleep Log"
 SHEET_SUMMARY = "Weekly Summary"
+SHEET_EMOTIONS = "Emotions Log"
+SHEET_ACTIVITY = "Activity Log"
+SHEET_CYCLE = "Cycle Log"
 
 CLAUDE_MODEL = "claude-sonnet-4-20250514"

@@ -1,17 +1,67 @@
-"""All Claude API calls — food vision, gym parsing, coaching."""
+"""All Claude API calls — Buff Buddy voice lives here."""
 import base64
-import re
+import json
 import anthropic
 from src.config import ANTHROPIC_API_KEY, CLAUDE_MODEL
 
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
+# ── Buff Buddy system prompt ───────────────────────────────────────────────────
+
+BUFF_BUDDY_SYSTEM = """You are Buff Buddy — a drill sergeant with heart. Sports locker room energy. Firm, direct, and genuinely invested in Liz's progress — not just her reps.
+
+USER'S NAME RULES:
+- "Liz" → default, everyday use
+- "Lizzard" → PRs and big wins only
+- "Lizzy" → soft moments only: struggling, low mood, cycle lows
+
+TONE BY ENTRY TYPE:
+- Gym: locker room hype, celebratory, punchy. Always reference actual numbers. Compare to last session when data exists.
+- Meal: matter of fact, no fluff. State macros clearly. No judgment ever.
+- Recovery/Sleep: calm and steady. Acknowledge rest is part of the quest. Never catastrophise short sleep.
+- Emotions/Cycle: warm, holds space, non-clinical. Never force positivity. If cycle data exists, connect mood to phase naturally.
+
+QUEST LANGUAGE — use sparingly, max one per message, only when it fits:
+"Mission logged" — after any completed entry
+"Quest continues" — end of day / summary
+"Levelled up" — PR or new personal best
+"Boss battle" — hard workout ahead
+"Fuelled" — meal acknowledged
+"Recovery mission" — rest day or sleep entry
+"Game time" — starting a gym session
+"The scoreboard" — referring to daily summary
+
+VOICE RULES:
+- Short sentences always. One idea per sentence. Max 3 lines per reply.
+- Affirmations must reference actual logged data — never generic.
+- Read the room — hype when deserved, steady when she's struggling.
+- Firm not harsh — hold her accountable but never shame her.
+- Quirky not try-hard — quest language must feel natural, not forced.
+
+NEVER SAY:
+- "Great job!" or "Well done!" with no context
+- "I'm just an AI, but..."
+- "You should consider..."
+- "Remember to stay hydrated!" unprompted
+- Toxic positivity on hard days
+- More than one quest phrase per message"""
+
+
+def _call(prompt: str, max_tokens: int = 300, system: str = BUFF_BUDDY_SYSTEM) -> str:
+    response = client.messages.create(
+        model=CLAUDE_MODEL,
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.content[0].text.strip()
+
+
+# ── Food ──────────────────────────────────────────────────────────────────────
 
 def analyse_food_photo(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
-    """Return estimated macros from a meal photo."""
     b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
     prompt = (
-        "You are a precise sports nutritionist AI. "
         "Analyse this meal photo and estimate macros. "
         "Reply in this exact format, nothing else:\n"
         "DESCRIPTION: <brief meal description>\n"
@@ -20,11 +70,12 @@ def analyse_food_photo(image_bytes: bytes, mime_type: str = "image/jpeg") -> dic
         "CARBS: <grams as decimal>\n"
         "FATS: <grams as decimal>\n"
         "CONFIDENCE: <low|medium|high>\n"
-        "NOTE: <one-line note about your estimate>"
+        "NOTE: <one-line Buff Buddy style response about this meal>"
     )
     response = client.messages.create(
         model=CLAUDE_MODEL,
         max_tokens=300,
+        system=BUFF_BUDDY_SYSTEM,
         messages=[{
             "role": "user",
             "content": [
@@ -33,8 +84,23 @@ def analyse_food_photo(image_bytes: bytes, mime_type: str = "image/jpeg") -> dic
             ],
         }],
     )
-    text = response.content[0].text
-    return _parse_macro_response(text)
+    return _parse_macro_response(response.content[0].text)
+
+
+def analyse_food_text(text: str) -> dict:
+    prompt = (
+        "Analyse this meal description and estimate macros. "
+        "Reply in this exact format, nothing else:\n"
+        "DESCRIPTION: <brief meal description>\n"
+        "CALORIES: <integer>\n"
+        "PROTEIN: <grams as decimal>\n"
+        "CARBS: <grams as decimal>\n"
+        "FATS: <grams as decimal>\n"
+        "CONFIDENCE: <low|medium|high>\n"
+        "NOTE: <one-line Buff Buddy style response>\n\n"
+        f"Meal: {text}"
+    )
+    return _parse_macro_response(_call(prompt))
 
 
 def _parse_macro_response(text: str) -> dict:
@@ -54,34 +120,11 @@ def _parse_macro_response(text: str) -> dict:
     }
 
 
-def analyse_food_text(text: str) -> dict:
-    """Return estimated macros from a text meal description."""
-    prompt = (
-        "You are a precise sports nutritionist AI. "
-        "Analyse this meal description and estimate macros. "
-        "Reply in this exact format, nothing else:\n"
-        "DESCRIPTION: <brief meal description>\n"
-        "CALORIES: <integer>\n"
-        "PROTEIN: <grams as decimal>\n"
-        "CARBS: <grams as decimal>\n"
-        "FATS: <grams as decimal>\n"
-        "CONFIDENCE: <low|medium|high>\n"
-        "NOTE: <one-line note about your estimate>\n\n"
-        f"Meal: {text}"
-    )
-    response = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=300,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return _parse_macro_response(response.content[0].text)
-
+# ── Gym ───────────────────────────────────────────────────────────────────────
 
 def parse_gym_entry(text: str) -> dict:
-    """Parse free-text gym log like 'Bench 80kg 4x5 RPE 8'."""
     prompt = (
-        "Parse this gym log entry into structured data. "
-        "Reply in this exact format, nothing else:\n"
+        "Parse this gym log entry. Reply in this exact format, nothing else:\n"
         "EXERCISE: <exercise name, title case>\n"
         "SETS: <integer>\n"
         "REPS: <integer>\n"
@@ -90,12 +133,7 @@ def parse_gym_entry(text: str) -> dict:
         "NOTES: <any extra detail, or empty>\n\n"
         f"Entry: {text}"
     )
-    response = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=200,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = response.content[0].text
+    raw = _call(prompt, max_tokens=200)
     result = {}
     for line in raw.strip().splitlines():
         if ":" in line:
@@ -111,54 +149,110 @@ def parse_gym_entry(text: str) -> dict:
     }
 
 
-def generate_coaching_note(
-    context: str,
-    coach_nutrition: str,
-    coach_training: str,
-    tone: str = "firm but supportive, like a personal trainer",
-) -> str:
+def parse_session_results(exercise_list: list, user_input: str) -> list:
+    exercises_str = "\n".join(f"{i+1}. {ex}" for i, ex in enumerate(exercise_list))
     prompt = (
-        f"You are a personal coach. Tone: {tone}.\n\n"
-        f"Nutrition coaching guidelines:\n{coach_nutrition}\n\n"
-        f"Training coaching guidelines:\n{coach_training}\n\n"
+        f"Exercise list:\n{exercises_str}\n\n"
+        f"User logged:\n{user_input}\n\n"
+        "Match input to exercise list. Reply as JSON array only:\n"
+        '[{"number":1,"exercise":"name","weight_kg":0,"sets":0,"reps":0,"rpe":null,"skipped":false,"notes":""}]\n\n'
+        "Rules: match by number or name. If not mentioned set skipped:true. weight_kg=0 for bodyweight."
+    )
+    text = _call(prompt, max_tokens=800)
+    start = text.find("[")
+    end = text.rfind("]") + 1
+    return json.loads(text[start:end])
+
+
+def gym_session_reply(session_lines: list, has_pr: bool) -> str:
+    summary = "\n".join(session_lines)
+    prompt = (
+        f"Session data:\n{summary}\n\n"
+        f"PR achieved: {has_pr}\n\n"
+        "Give a Buff Buddy reply for this completed gym session. Max 3 lines."
+    )
+    return _call(prompt, max_tokens=150)
+
+
+# ── Recovery / Sleep ──────────────────────────────────────────────────────────
+
+def recovery_reply(hours: float, quality: int, streak: int) -> str:
+    prompt = (
+        f"Sleep: {hours}h, quality {quality}/5, streak {streak} nights of 7h+.\n\n"
+        "Give a Buff Buddy recovery reply. Max 2 lines. Calm and steady tone."
+    )
+    return _call(prompt, max_tokens=100)
+
+
+# ── Emotions ──────────────────────────────────────────────────────────────────
+
+def parse_emotions(text: str) -> dict:
+    """Extract mood score, energy score, and notes from free text."""
+    prompt = (
+        "Extract mood and energy from this message. Reply as JSON only:\n"
+        '{"mood": <1-10>, "energy": <1-10>, "notes": "<brief summary>"}\n\n'
+        "Rules: 1=very low, 10=excellent. Infer from context. If unclear use 5.\n\n"
+        f"Message: {text}"
+    )
+    raw = _call(prompt, max_tokens=100)
+    start = raw.find("{")
+    end = raw.rfind("}") + 1
+    try:
+        return json.loads(raw[start:end])
+    except Exception:
+        return {"mood": 5, "energy": 5, "notes": text[:100]}
+
+
+def emotions_reply(mood: int, energy: int, notes: str, cycle_day: int | None, phase: str | None) -> str:
+    cycle_ctx = f"Cycle day {cycle_day}, phase: {phase}." if cycle_day else "No cycle data."
+    prompt = (
+        f"Mood: {mood}/10, Energy: {energy}/10\n"
+        f"Notes: {notes}\n"
+        f"Cycle: {cycle_ctx}\n\n"
+        "Give a Buff Buddy emotions reply. Warm, non-clinical. Max 3 lines. "
+        "If cycle data exists, connect mood to phase naturally. Use 'Lizzy' only if she's struggling."
+    )
+    return _call(prompt, max_tokens=150)
+
+
+# ── Coaching ──────────────────────────────────────────────────────────────────
+
+def generate_coaching_note(context: str, coach_nutrition: str, coach_training: str) -> str:
+    prompt = (
+        f"Nutrition guidelines:\n{coach_nutrition}\n\n"
+        f"Training guidelines:\n{coach_training}\n\n"
         f"Today's data:\n{context}\n\n"
-        "Give ONE short coaching note (2-3 sentences max) relevant to today's data. "
-        "Be direct. No fluff."
+        "Give ONE coaching note (2-3 sentences). Direct. Reference actual numbers."
     )
-    response = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=200,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return response.content[0].text.strip()
+    return _call(prompt, max_tokens=200)
 
 
 def score_weekly_goals(goals_text: str, week_data: str) -> str:
     prompt = (
-        "You are a personal coach scoring weekly goals.\n\n"
-        f"Goals set this week:\n{goals_text}\n\n"
-        f"Week's data summary:\n{week_data}\n\n"
-        "Score each goal as Achieved / Partial / Missed. "
-        "Then give an overall score out of 10 and 2-3 sentences of honest feedback. "
-        "Be firm but fair."
+        f"Goals:\n{goals_text}\n\n"
+        f"Week data:\n{week_data}\n\n"
+        "Score each goal: Achieved / Partial / Missed. "
+        "Overall score out of 10. 2-3 sentences of honest feedback. Buff Buddy voice."
     )
-    response = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=500,
-        messages=[{"role": "user", "content": prompt}],
+    return _call(prompt, max_tokens=500)
+
+
+def generate_cycle_summary(cycle_data: dict) -> str:
+    prompt = (
+        f"Cycle data:\n{json.dumps(cycle_data, indent=2)}\n\n"
+        "Write a monthly cycle summary in Buff Buddy's voice.\n\n"
+        "Format:\n"
+        "1. Casual 2-3 sentence intro (warm, not clinical). Use 'Liz'.\n"
+        "2. Structured breakdown:\n"
+        "   - Mood by phase (use the avg_mood_by_phase data)\n"
+        "   - Training: gym sessions + activities\n"
+        "   - Nutrition averages\n"
+        "   - Any patterns worth noting\n\n"
+        "Keep it real. No toxic positivity. Max 10 lines total."
     )
-    return response.content[0].text.strip()
+    return _call(prompt, max_tokens=600)
 
 
 def generate_motivation_message(trigger: str, context: str) -> str:
-    prompt = (
-        f"Trigger: {trigger}\nContext: {context}\n\n"
-        "Write a short motivational message (1-2 sentences) in a firm, PT-style tone. "
-        "No emojis. Be real."
-    )
-    response = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=100,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return response.content[0].text.strip()
+    prompt = f"Trigger: {trigger}\nContext: {context}\n\nShort Buff Buddy motivation. 1-2 sentences."
+    return _call(prompt, max_tokens=100)

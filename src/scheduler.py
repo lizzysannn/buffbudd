@@ -131,3 +131,22 @@ def _week_start() -> str:
     from datetime import date, timedelta
     today = date.today()
     return (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
+
+
+async def send_cycle_summary(bot: Bot):
+    """Called when a new period is logged — summarise the previous cycle."""
+    try:
+        cycle_data = sheets.get_cycle_summary_data()
+        if not cycle_data:
+            return
+        summary = claude_ai.generate_cycle_summary(cycle_data)
+        await bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=f"*Monthly Cycle Summary*\n\n{summary}",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        await bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=f"Cycle summary couldn't be generated: {e}",
+        )

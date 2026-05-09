@@ -1,28 +1,52 @@
-"""Decides whether an incoming text message is a gym log, sleep reply, or food log."""
+"""Claude-powered intent classification for incoming messages."""
 import re
+import anthropic
+from src.config import ANTHROPIC_API_KEY, CLAUDE_MODEL
 
-# Explicit keyword triggers at the start of the message
-_GYM_PREFIX = re.compile(r"^\s*(gym|GYM|training|TRAINING|workout|WORKOUT)\b", re.IGNORECASE)
-_SLEEP_PREFIX = re.compile(r"^\s*(sleep|SLEEP|recovery|RECOVERY|slept|SLEPT)\b", re.IGNORECASE)
+_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-# Sleep reply: two numbers like "7 4" or "7.5 4"
+# Period trigger patterns — detected before Claude to avoid API call
+_PERIOD_RE = re.compile(
+    r"\b(period\s+started|got\s+my\s+period|period\s+today|started\s+my\s+period|"
+    r"period\s+came|my\s+period|got\s+period|period\s+start)\b",
+    re.IGNORECASE,
+)
+
+# Sleep shorthand: two numbers like "7 4" or "7.5 4"
 _SLEEP_RE = re.compile(r"^\s*\d+(\.\d+)?\s+[1-5]\s*$")
 
 
-def classify_text(text: str) -> str:
-    """Returns 'gym', 'sleep', 'food', or 'unknown'.
+def classify_intent(text: str) -> str:
+    """Returns: gym | meal | recovery | emotions | period | unknown
 
-    Rules:
-    - Starts with GYM / TRAINING / WORKOUT → gym
-    - Starts with SLEEP / RECOVERY / SLEPT → sleep
-    - Two numbers like '7 4' → sleep check-in reply
-    - Everything else → food (Claude will estimate macros)
+    Uses cheap regex first, then Claude for ambiguous cases.
     """
-    if _SLEEP_RE.match(text):
-        return "sleep"
-    if _GYM_PREFIX.match(text):
-        return "gym"
-    if _SLEEP_PREFIX.match(text):
-        return "sleep"
-    # Default: treat as food description
-    return "food"
+    # Fast-path: sleep shorthand
+    if _SLEEP_RE.match(text.strip()):
+        return "recovery"
+
+    # Fast-path: period trigger
+    if _PERIOD_RE.search(text):
+        return "period"
+
+    # Claude classification
+    prompt = (
+        "Classify this Telegram message from a fitness tracking user into exactly one intent.\n\n"
+        "Intents:\n"
+        "- gym: logging a workout, exercises, sets, reps, weights, or saying they went to the gym\n"
+        "- meal: describing food eaten, asking to log a meal, food photos\n"
+        "- recovery: sleep hours, sleep quality, rest, fatigue, recovery\n"
+        "- emotions: mood, feelings, stress, mental state, energy levels, how they feel\n"
+        "- period: period started, menstrual cycle related\n"
+        "- unknown: anything else\n\n"
+        f"Message: {text}\n\n"
+        "Reply with exactly one word from: gym, meal, recovery, emotions, period, unknown"
+    )
+    response = _client.messages.create(
+        model=CLAUDE_MODEL,
+        max_tokens=10,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    intent = response.content[0].text.strip().lower()
+    valid = {"gym", "meal", "recovery", "emotions", "period", "unknown"}
+    return intent if intent in valid else "unknown"

@@ -9,6 +9,7 @@ from src.config import (
     GOOGLE_SERVICE_ACCOUNT_JSON, SPREADSHEET_ID,
     COACH_NUTRITION_DOC_ID, COACH_TRAINING_DOC_ID, WEEKLY_GOALS_DOC_ID,
     SHEET_FOOD, SHEET_GYM, SHEET_SLEEP, SHEET_SUMMARY,
+    SHEET_EMOTIONS, SHEET_ACTIVITY, SHEET_CYCLE,
 )
 
 SCOPES = [
@@ -193,6 +194,142 @@ def _read_doc(doc_id: str) -> str:
             if text_run:
                 text_parts.append(text_run.get("content", ""))
     return "".join(text_parts).strip()
+
+
+# ── Cycle tracking ────────────────────────────────────────────────────────────
+
+def get_last_period_start() -> date | None:
+    """Return the most recent period start date from Cycle Log."""
+    try:
+        ws = _sheet(SHEET_CYCLE)
+        rows = ws.get_all_records()
+        day1_rows = [r for r in rows if str(r.get("Cycle Day", "")).strip() == "1"]
+        if not day1_rows:
+            return None
+        latest = max(day1_rows, key=lambda r: r.get("Date", ""))
+        d = latest.get("Date", "")
+        return date.fromisoformat(str(d)) if d else None
+    except Exception:
+        return None
+
+
+def get_cycle_info() -> tuple[int | None, str | None]:
+    """Return (cycle_day, phase) based on last period start. Never shown to user."""
+    start = get_last_period_start()
+    if not start:
+        return None, None
+    today = date.today()
+    cycle_day = (today - start).days + 1
+    if cycle_day <= 5:
+        phase = "menstrual"
+    elif cycle_day <= 13:
+        phase = "follicular"
+    elif cycle_day == 14:
+        phase = "ovulatory"
+    elif cycle_day <= 28:
+        phase = "luteal"
+    else:
+        phase = "late luteal"
+    return cycle_day, phase
+
+
+def log_period_start(symptoms: str = "", notes: str = ""):
+    ws = _sheet(SHEET_CYCLE)
+    today = date.today().strftime("%Y-%m-%d")
+    ws.append_row([today, 1, "menstrual", symptoms, "started", notes])
+
+
+def log_emotions(mood: int, energy: int, notes: str = ""):
+    ws = _sheet(SHEET_EMOTIONS)
+    cycle_day, phase = get_cycle_info()
+    today = date.today()
+    now = datetime.now()
+    ws.append_row([
+        today.strftime("%Y-%m-%d"),
+        now.strftime("%H:%M"),
+        mood,
+        energy,
+        notes,
+        cycle_day or "",
+        phase or "",
+    ])
+
+
+def log_activity(activity_type: str, duration_mins: int, notes: str = ""):
+    ws = _sheet(SHEET_ACTIVITY)
+    cycle_day, phase = get_cycle_info()
+    today = date.today()
+    ws.append_row([
+        today.strftime("%Y-%m-%d"),
+        activity_type,
+        duration_mins,
+        notes,
+        cycle_day or "",
+        phase or "",
+    ])
+
+
+# ── Cycle summary data ────────────────────────────────────────────────────────
+
+def get_cycle_summary_data() -> dict:
+    """Aggregate data for a full cycle summary report."""
+    start = get_last_period_start()
+    if not start:
+        return {}
+    from datetime import timedelta
+    prev_start = None
+    try:
+        ws = _sheet(SHEET_CYCLE)
+        rows = ws.get_all_records()
+        day1_rows = sorted(
+            [r for r in rows if str(r.get("Cycle Day", "")).strip() == "1"],
+            key=lambda r: r.get("Date", ""),
+        )
+        if len(day1_rows) >= 2:
+            prev_start = date.fromisoformat(str(day1_rows[-2]["Date"]))
+    except Exception:
+        pass
+
+    cycle_start = prev_start or (start - timedelta(days=28))
+    cycle_end = start
+
+    def in_cycle(r):
+        d = str(r.get("Date", ""))
+        return d >= cycle_start.strftime("%Y-%m-%d") and d < cycle_end.strftime("%Y-%m-%d")
+
+    emotions = [r for r in _sheet(SHEET_EMOTIONS).get_all_records() if in_cycle(r)]
+    activities = [r for r in _sheet(SHEET_ACTIVITY).get_all_records() if in_cycle(r)]
+    gym = [r for r in _sheet(SHEET_GYM).get_all_records() if in_cycle(r)]
+    food = [r for r in _sheet(SHEET_FOOD).get_all_records() if in_cycle(r)]
+
+    # Mood by phase
+    mood_by_phase: dict = {}
+    for r in emotions:
+        p = str(r.get("Phase", "unknown"))
+        mood_by_phase.setdefault(p, []).append(int(r.get("Mood (1-10)", 5)))
+
+    avg_mood = {p: round(sum(v) / len(v), 1) for p, v in mood_by_phase.items()}
+
+    return {
+        "cycle_start": cycle_start.strftime("%Y-%m-%d"),
+        "cycle_end": cycle_end.strftime("%Y-%m-%d"),
+        "avg_mood_by_phase": avg_mood,
+        "total_gym_sessions": len({r.get("Date") for r in gym}),
+        "total_activities": len(activities),
+        "avg_calories": round(sum(int(r.get("Calories", 0)) for r in food) / max(len({r.get("Date") for r in food}), 1)),
+        "avg_protein": round(sum(float(r.get("Protein", 0)) for r in food) / max(len({r.get("Date") for r in food}), 1), 1),
+    }
+
+
+def parse_exercise_list(doc_text: str) -> list:
+    """Extract numbered exercises from CoachTraining doc text."""
+    import re
+    exercises = []
+    for line in doc_text.split("\n"):
+        match = re.match(r"^\s*(\d+)\.\s+(.+)", line)
+        if match:
+            exercises.append(match.group(2).strip())
+    return exercises
 
 
 def get_coach_nutrition() -> str:
