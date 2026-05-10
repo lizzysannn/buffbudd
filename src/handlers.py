@@ -120,6 +120,17 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             await query.edit_message_text(msg, parse_mode="Markdown")
 
+    elif data == "food_correct":
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.answer("Logged ✅")
+
+    elif data == "food_fix":
+        await query.edit_message_reply_markup(reply_markup=None)
+        ctx.user_data["awaiting_food_correction"] = True
+        await query.message.reply_text(
+            "What's wrong with it? Just tell me — e.g. `they're half-boiled eggs not fried, and add peanut butter on the bread`"
+        )
+
     elif data == "exercise_confirm":
         ex = ctx.user_data.pop("pending_exercise", None)
         if ex:
@@ -230,15 +241,10 @@ async def _log_meal_text(text: str, reply, ctx=None, meal_type: str = ""):
 
         sheets.log_food(macros["description"], macros["calories"], macros["protein"], macros["carbs"], macros["fats"], resolved_type)
         totals = sheets.get_today_totals()
-        msg = (
-            f"*{macros['description']}* · _{resolved_type.capitalize()}_\n"
-            f"Fuelled. {macros['calories']} cal · {macros['protein']}g protein · {macros['carbs']}g carbs · {macros['fats']}g fat\n"
-            f"_{macros['note']}_\n\n"
-            f"Today: {totals['calories']} / {DEFAULT_CALORIES} cal · Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g"
-        )
-        if totals["protein"] < DEFAULT_PROTEIN * 0.5 and totals["meals"] >= 2:
-            msg += "\n\nProtein's low, Liz. Prioritise it next meal."
-        await reply(msg, parse_mode="Markdown")
+        if ctx:
+            ctx.user_data["last_food"] = {"macros": macros, "meal_type": resolved_type}
+        msg = _build_food_reply(macros, resolved_type, totals)
+        await reply(msg, parse_mode="Markdown", reply_markup=_food_confirm_keyboard())
     except Exception as e:
         import traceback
         log.error(traceback.format_exc()); await reply(_safe_error(e, "meal logging"))
@@ -493,6 +499,29 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     text = (update.message.text or "").strip()
 
+    # Food correction flow
+    if ctx.user_data.get("awaiting_food_correction"):
+        ctx.user_data["awaiting_food_correction"] = False
+        last = ctx.user_data.get("last_food", {})
+        original = last.get("macros", {})
+        await update.message.reply_text("Re-analysing with your correction...")
+        try:
+            corrected = claude_ai.analyse_food_text(
+                f"Original meal: {original.get('description', '')}. Correction: {text}"
+            )
+            resolved_type = corrected.get("meal_type") or last.get("meal_type") or sheets.infer_meal_type_from_time()
+            # Delete last row and re-log with corrected values
+            sheets.delete_last_food_row()
+            sheets.log_food(corrected["description"], corrected["calories"], corrected["protein"], corrected["carbs"], corrected["fats"], resolved_type)
+            totals = sheets.get_today_totals()
+            ctx.user_data["last_food"] = {"macros": corrected, "meal_type": resolved_type}
+            msg = "Fixed. " + _build_food_reply(corrected, resolved_type, totals)
+            await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=_food_confirm_keyboard())
+        except Exception as e:
+            log.error(traceback.format_exc())
+            await update.message.reply_text(_safe_error(e, "correction"))
+        return
+
     # Mid-session: append message, reset silence timer
     if _active_session(ctx):
         _append_session(ctx, text)
@@ -554,6 +583,45 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     _schedule_silence(update, ctx)
 
 
+# ── Food confirm/fix buttons ──────────────────────────────────────────────────
+
+def _food_confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Correct", callback_data="food_correct"),
+        InlineKeyboardButton("🔧 Fix this", callback_data="food_fix"),
+    ]])
+
+
+def _build_food_reply(macros: dict, resolved_type: str, totals: dict) -> str:
+    lines = [f"*{resolved_type.capitalize()}* · _{macros['note']}_\n"]
+
+    # Per-item breakdown
+    items = macros.get("items", [])
+    if items:
+        for item in items:
+            cal = int(item.get("calories", 0))
+            pro = float(item.get("protein", 0))
+            carb = float(item.get("carbs", 0))
+            fat = float(item.get("fats", 0))
+            lines.append(
+                f"• *{item['name']}* — {cal} cal · {pro}g P · {carb}g C · {fat}g F"
+            )
+        lines.append("")
+
+    # Totals
+    lines.append(
+        f"Total: *{macros['calories']} cal* · {macros['protein']}g protein · "
+        f"{macros['carbs']}g carbs · {macros['fats']}g fat"
+    )
+    lines.append(
+        f"Today: {totals['calories']} / {DEFAULT_CALORIES} cal · "
+        f"Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g"
+    )
+    if totals["protein"] < DEFAULT_PROTEIN * 0.5 and totals["meals"] >= 2:
+        lines.append("\nProtein's low, Liz. Prioritise it next meal.")
+    return "\n".join(lines)
+
+
 # ── Photo handler ─────────────────────────────────────────────────────────────
 
 async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -566,22 +634,23 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         buf = io.BytesIO()
         await file.download_to_memory(buf)
         image_bytes = buf.getvalue()
-        macros = claude_ai.analyse_food_photo(image_bytes)
+
+        # Use caption text alongside photo so bot isn't guessing blind
+        caption = (update.message.caption or "").strip()
+        macros = claude_ai.analyse_food_photo(image_bytes, caption_hint=caption)
+
         resolved_type = macros.get("meal_type") or sheets.infer_meal_type_from_time()
         sheets.log_food(macros["description"], macros["calories"], macros["protein"], macros["carbs"], macros["fats"], resolved_type)
         totals = sheets.get_today_totals()
-        msg = (
-            f"*{macros['description']}* · _{resolved_type.capitalize()}_\n"
-            f"Fuelled. {macros['calories']} cal · {macros['protein']}g protein · {macros['carbs']}g carbs · {macros['fats']}g fat\n"
-            f"_{macros['note']}_\n\n"
-            f"Today: {totals['calories']} / {DEFAULT_CALORIES} cal · Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g"
-        )
-        if totals["protein"] < DEFAULT_PROTEIN * 0.5 and totals["meals"] >= 2:
-            msg += "\n\nProtein's low, Liz. Prioritise it next meal."
-        await update.message.reply_text(msg, parse_mode="Markdown")
+
+        # Store last logged macros for correction flow
+        ctx.user_data["last_food"] = {"macros": macros, "meal_type": resolved_type}
+
+        msg = _build_food_reply(macros, resolved_type, totals)
+        await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=_food_confirm_keyboard())
     except Exception as e:
-        import traceback
-        log.error(traceback.format_exc()); await update.message.reply_text(_safe_error(e))
+        log.error(traceback.format_exc())
+        await update.message.reply_text(_safe_error(e, "photo analysis"))
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────

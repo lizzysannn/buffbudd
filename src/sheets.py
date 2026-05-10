@@ -65,6 +65,14 @@ def log_food(meal_desc: str, calories: int, protein: float, carbs: float, fats: 
     ])
 
 
+def delete_last_food_row():
+    """Remove the most recently logged food entry (for corrections)."""
+    ws = _sheet(SHEET_FOOD)
+    all_rows = ws.get_all_values()
+    if len(all_rows) > 1:  # keep header
+        ws.delete_rows(len(all_rows))
+
+
 def get_today_food() -> list[dict]:
     ws = _sheet(SHEET_FOOD)
     today = date.today().strftime("%Y-%m-%d")

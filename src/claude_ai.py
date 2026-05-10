@@ -59,23 +59,26 @@ def _call(prompt: str, max_tokens: int = 300, system: str = BUFF_BUDDY_SYSTEM) -
 
 # ── Food ──────────────────────────────────────────────────────────────────────
 
-def analyse_food_photo(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
+def analyse_food_photo(image_bytes: bytes, mime_type: str = "image/jpeg", caption_hint: str = "") -> dict:
     b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+    hint_line = f"\nUser description: {caption_hint}" if caption_hint else ""
     prompt = (
-        "Analyse this meal photo and estimate macros. "
-        "Reply in this exact format, nothing else:\n"
-        "DESCRIPTION: <brief meal description>\n"
-        "MEAL_TYPE: <breakfast|lunch|dinner|snack|supper — guess from food type, else NONE>\n"
-        "CALORIES: <integer>\n"
-        "PROTEIN: <grams as decimal>\n"
-        "CARBS: <grams as decimal>\n"
-        "FATS: <grams as decimal>\n"
-        "CONFIDENCE: <low|medium|high>\n"
-        "NOTE: <one-line Buff Buddy style response about this meal>"
+        "Analyse this meal photo and estimate macros per item. "
+        "The user's description takes priority over what you see — use it to correct your visual guess. "
+        "Include EVERY item mentioned, even if macros are near zero (e.g. black coffee = ~5 cal)."
+        f"{hint_line}\n\n"
+        "Reply in this exact JSON format, nothing else:\n"
+        "{\n"
+        '  "meal_type": "breakfast|lunch|dinner|snack|supper|NONE",\n'
+        '  "note": "one-line Buff Buddy style response",\n'
+        '  "items": [\n'
+        '    {"name": "item name", "calories": 0, "protein": 0.0, "carbs": 0.0, "fats": 0.0}\n'
+        "  ]\n"
+        "}"
     )
     response = client.messages.create(
         model=CLAUDE_MODEL,
-        max_tokens=300,
+        max_tokens=600,
         system=BUFF_BUDDY_SYSTEM,
         messages=[{
             "role": "user",
@@ -85,24 +88,57 @@ def analyse_food_photo(image_bytes: bytes, mime_type: str = "image/jpeg") -> dic
             ],
         }],
     )
-    return _parse_macro_response(response.content[0].text)
+    return _parse_itemised_response(response.content[0].text)
 
 
 def analyse_food_text(text: str) -> dict:
     prompt = (
-        "Analyse this meal description and estimate macros. "
-        "Reply in this exact format, nothing else:\n"
-        "DESCRIPTION: <brief meal description>\n"
-        "MEAL_TYPE: <breakfast|lunch|dinner|snack|supper — extract from text if mentioned, else NONE>\n"
-        "CALORIES: <integer>\n"
-        "PROTEIN: <grams as decimal>\n"
-        "CARBS: <grams as decimal>\n"
-        "FATS: <grams as decimal>\n"
-        "CONFIDENCE: <low|medium|high>\n"
-        "NOTE: <one-line Buff Buddy style response>\n\n"
+        "Analyse this meal description and estimate macros per item. "
+        "Include EVERY item mentioned, even if macros are near zero (e.g. black coffee = ~5 cal, water = 0).\n\n"
+        "Reply in this exact JSON format, nothing else:\n"
+        "{\n"
+        '  "meal_type": "breakfast|lunch|dinner|snack|supper|NONE",\n'
+        '  "note": "one-line Buff Buddy style response",\n'
+        '  "items": [\n'
+        '    {"name": "item name", "calories": 0, "protein": 0.0, "carbs": 0.0, "fats": 0.0}\n'
+        "  ]\n"
+        "}\n\n"
         f"Meal: {text}"
     )
-    return _parse_macro_response(_call(prompt))
+    return _parse_itemised_response(_call(prompt, max_tokens=600))
+
+
+def _parse_itemised_response(text: str) -> dict:
+    """Parse itemised JSON response into a standard macro dict with items list."""
+    start = text.find("{")
+    end = text.rfind("}") + 1
+    try:
+        data = json.loads(text[start:end])
+    except Exception:
+        # Fallback to old format
+        return _parse_macro_response(text)
+
+    items = data.get("items", [])
+    raw_type = data.get("meal_type", "NONE").strip().lower()
+    meal_type = raw_type if raw_type in {"breakfast", "lunch", "dinner", "snack", "supper"} else ""
+
+    total_cal = sum(int(i.get("calories", 0)) for i in items)
+    total_pro = sum(float(i.get("protein", 0)) for i in items)
+    total_carb = sum(float(i.get("carbs", 0)) for i in items)
+    total_fat = sum(float(i.get("fats", 0)) for i in items)
+    description = ", ".join(i["name"] for i in items if i.get("name"))
+
+    return {
+        "description": description,
+        "meal_type": meal_type,
+        "calories": total_cal,
+        "protein": round(total_pro, 1),
+        "carbs": round(total_carb, 1),
+        "fats": round(total_fat, 1),
+        "confidence": "medium",
+        "note": data.get("note", ""),
+        "items": items,
+    }
 
 
 def _parse_macro_response(text: str) -> dict:
