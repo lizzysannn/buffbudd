@@ -20,8 +20,6 @@ from src.config import (
     TELEGRAM_CHAT_ID,
 )
 
-SILENCE_TIMEOUT = 8  # seconds before "is that everything?" prompt
-
 
 def _is_authorised(update: Update) -> bool:
     return update.effective_chat.id == TELEGRAM_CHAT_ID
@@ -29,53 +27,6 @@ def _is_authorised(update: Update) -> bool:
 
 async def _deny(update: Update):
     await update.message.reply_text("Unauthorised.")
-
-
-# ── Session state helpers ─────────────────────────────────────────────────────
-
-def _open_session(ctx, intent: str, first_message: str):
-    ctx.user_data["session_intent"] = intent
-    ctx.user_data["session_messages"] = [first_message]
-    ctx.user_data["session_task"] = None
-
-
-def _append_session(ctx, text: str):
-    ctx.user_data.setdefault("session_messages", []).append(text)
-
-
-def _close_session(ctx):
-    intent = ctx.user_data.pop("session_intent", None)
-    messages = ctx.user_data.pop("session_messages", [])
-    ctx.user_data.pop("session_task", None)
-    ctx.user_data.pop("gym_exercises", None)
-    ctx.user_data.pop("awaiting_gym_results", None)
-    return intent, messages
-
-
-def _active_session(ctx) -> str | None:
-    return ctx.user_data.get("session_intent")
-
-
-# ── Silence timer ─────────────────────────────────────────────────────────────
-
-async def _silence_check(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await asyncio.sleep(SILENCE_TIMEOUT)
-    if not _active_session(ctx):
-        return
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("✅ Yes, log it", callback_data="session_done"),
-        InlineKeyboardButton("➕ Add more", callback_data="session_more"),
-    ]])
-    await update.message.reply_text("That everything for this one?", reply_markup=keyboard)
-
-
-def _schedule_silence(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    # Cancel existing timer
-    old_task = ctx.user_data.get("session_task")
-    if old_task and not old_task.done():
-        old_task.cancel()
-    task = asyncio.create_task(_silence_check(update, ctx))
-    ctx.user_data["session_task"] = task
 
 
 # ── Intent disambiguation buttons ─────────────────────────────────────────────
@@ -98,16 +49,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
 
-    if data == "session_done":
-        await _finalise_session(update, ctx, via_button=True)
-
-    elif data == "session_more":
-        old_task = ctx.user_data.get("session_task")
-        if old_task and not old_task.done():
-            old_task.cancel()
-        await query.edit_message_text("Go ahead, add more.")
-
-    elif data.startswith("mealtype_"):
+    if data.startswith("mealtype_"):
         meal_type = data.replace("mealtype_", "")
         macros = ctx.user_data.pop("pending_macros", None)
         if macros:
@@ -168,43 +110,20 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("intent_"):
         intent = data.replace("intent_", "")
-        messages = ctx.user_data.get("pending_messages", [])
-        if messages:
-            _open_session(ctx, intent, " ".join(messages))
-            ctx.user_data.pop("pending_messages", None)
-            _schedule_silence(update, ctx)
-            await query.edit_message_text(f"Got it — logging as {intent}. Anything to add?")
-
-
-# ── Finalise and log session ───────────────────────────────────────────────────
-
-async def _finalise_session(update: Update, ctx: ContextTypes.DEFAULT_TYPE, via_button: bool = False):
-    intent, messages = _close_session(ctx)
-    combined = " ".join(messages).strip()
-
-    if via_button:
-        target = update.callback_query.message
-        reply = target.reply_text
-    else:
-        reply = update.message.reply_text
-
-    if not combined:
-        return
-
-    if intent == "meal":
-        await _log_meal_text(combined, reply, ctx=ctx)
-    elif intent == "gym":
-        await _log_gym_session(combined, ctx, reply)
-    elif intent == "recovery":
-        await _log_recovery(combined, reply)
-    elif intent == "emotions":
-        await _log_emotions(combined, reply)
-    elif intent == "period":
-        bot = update.get_bot() if not via_button else update.callback_query.get_bot()
-        chat_id = TELEGRAM_CHAT_ID
-        await _log_period(combined, reply, bot=bot, chat_id=chat_id)
-    else:
-        await reply("Couldn't figure out what to log. Try again.")
+        messages = ctx.user_data.pop("pending_messages", [])
+        combined = " ".join(messages).strip()
+        await query.edit_message_text(f"Got it — logging as {intent}...")
+        reply = query.message.reply_text
+        if intent == "meal":
+            await _log_meal_text(combined, reply, ctx=ctx)
+        elif intent == "gym":
+            await _show_gym_list(update, ctx)
+        elif intent == "recovery":
+            await _log_recovery(combined, reply)
+        elif intent == "emotions":
+            await _log_emotions(combined, reply)
+        elif intent == "period":
+            await _log_period(combined, reply, bot=ctx.bot, chat_id=TELEGRAM_CHAT_ID)
 
 
 # ── Meal logging ──────────────────────────────────────────────────────────────
@@ -379,6 +298,44 @@ async def handle_target_muscle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # ── Gym logging ───────────────────────────────────────────────────────────────
 
+async def _show_gym_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Show the exercise list and set awaiting_gym_results state."""
+    try:
+        available_sets = sheets.get_available_sets()
+        set_name = available_sets[0] if available_sets else "Self Train"
+        exercises = sheets.get_exercises_by_set(set_name)
+        if exercises:
+            ctx.user_data["gym_exercises"] = exercises
+            ctx.user_data["gym_set_name"] = set_name
+            ctx.user_data["awaiting_gym_results"] = True
+            lines = [f"*Game time. {set_name}:*"]
+            for i, ex in enumerate(exercises, 1):
+                name = ex.get("Exercise Name", "")
+                muscle = ex.get("Muscle Group", "")
+                last_w = ex.get("Last Weight (kg)", "")
+                line = f"{i}. {name} — {muscle}"
+                if last_w:
+                    line += f" — last {last_w}kg"
+                lines.append(line)
+            lines.append(f"\n_{len(exercises)} exercises. Optimal is 5-8 total._")
+            if len(exercises) < 8:
+                lines.append("Want extras? Say `suggest something` or `I want to hit [muscle]`.")
+            lines.append("\nLog results when ready — one per line or all at once:")
+            lines.append("`1 - 15kg 3x8` · `2 - 80kg 4x5 RPE 7` · `3 - skip`")
+            await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
+        else:
+            ctx.user_data["awaiting_gym_results"] = True
+            await update.effective_message.reply_text(
+                "No exercises in your catalogue yet. Log your session — I'll parse it:\n"
+                "`Bench Press 80kg 3x8, Squat 60kg 4x5`",
+                parse_mode="Markdown",
+            )
+    except Exception as e:
+        log.error(traceback.format_exc())
+        ctx.user_data["awaiting_gym_results"] = True
+        await update.effective_message.reply_text("Log your gym session:")
+
+
 async def _log_gym_session(text: str, ctx, reply):
     try:
         exercise_list = ctx.user_data.get("gym_exercises", [])
@@ -498,89 +455,61 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return await _deny(update)
 
     text = (update.message.text or "").strip()
+    reply = update.message.reply_text
 
     # Food correction flow
     if ctx.user_data.get("awaiting_food_correction"):
         ctx.user_data["awaiting_food_correction"] = False
         last = ctx.user_data.get("last_food", {})
         original = last.get("macros", {})
-        await update.message.reply_text("Re-analysing with your correction...")
+        await reply("Re-analysing with your correction...")
         try:
             corrected = claude_ai.analyse_food_text(
                 f"Original meal: {original.get('description', '')}. Correction: {text}"
             )
             resolved_type = corrected.get("meal_type") or last.get("meal_type") or sheets.infer_meal_type_from_time()
-            # Delete last row and re-log with corrected values
             sheets.delete_last_food_row()
             sheets.log_food(corrected["description"], corrected["calories"], corrected["protein"], corrected["carbs"], corrected["fats"], resolved_type)
             totals = sheets.get_today_totals()
             ctx.user_data["last_food"] = {"macros": corrected, "meal_type": resolved_type}
             msg = "Fixed. " + _build_food_reply(corrected, resolved_type, totals)
-            await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=_food_confirm_keyboard())
+            await reply(msg, parse_mode="Markdown", reply_markup=_food_confirm_keyboard())
         except Exception as e:
             log.error(traceback.format_exc())
-            await update.message.reply_text(_safe_error(e, "correction"))
+            await reply(_safe_error(e, "correction"))
         return
 
-    # Mid-session: append message, reset silence timer
-    if _active_session(ctx):
-        _append_session(ctx, text)
-        _schedule_silence(update, ctx)
+    # Gym results flow — waiting for the user to report back after seeing the list
+    if ctx.user_data.get("awaiting_gym_results"):
+        ctx.user_data.pop("awaiting_gym_results", None)
+        await _log_gym_session(text, ctx, reply)
+        ctx.user_data.pop("gym_exercises", None)
+        ctx.user_data.pop("gym_set_name", None)
         return
 
-    # Classify intent
+    # Classify intent and act immediately
     from src.router import classify_intent
     intent = classify_intent(text)
 
-    # Catalogue intents — handle immediately, no session needed
-    if intent == "add_exercise":
+    if intent == "meal":
+        await _log_meal_text(text, reply, ctx=ctx)
+    elif intent == "gym":
+        await _show_gym_list(update, ctx)
+    elif intent == "recovery":
+        await _log_recovery(text, reply)
+    elif intent == "emotions":
+        await _log_emotions(text, reply)
+    elif intent == "period":
+        await _log_period(text, reply, bot=ctx.bot, chat_id=TELEGRAM_CHAT_ID)
+    elif intent == "add_exercise":
         await handle_add_exercise(update, ctx)
-        return
-    if intent == "create_set":
+    elif intent == "create_set":
         await handle_create_set(update, ctx)
-        return
-    if intent == "target_muscle":
+    elif intent == "target_muscle":
         await handle_target_muscle(update, ctx)
-        return
-
-    if intent == "unknown":
+    else:
         await _ask_intent(update, text)
         ctx.user_data["pending_messages"] = [text]
-        return
-
-    # Special gym flow: show exercise list first
-    if intent == "gym":
-        try:
-            # Pull from Exercise Catalogue (Self Train set)
-            available_sets = sheets.get_available_sets()
-            set_name = available_sets[0] if available_sets else "Self Train"
-            exercises = sheets.get_exercises_by_set(set_name)
-            if exercises:
-                ctx.user_data["gym_exercises"] = exercises
-                ctx.user_data["gym_set_name"] = set_name
-                lines = [f"*Game time. {set_name}:*"]
-                for i, ex in enumerate(exercises, 1):
-                    name = ex.get("Exercise Name", "")
-                    muscle = ex.get("Muscle Group", "")
-                    last_w = ex.get("Last Weight (kg)", "")
-                    line = f"{i}. {name} — {muscle}"
-                    if last_w:
-                        line += f" — last {last_w}kg"
-                    lines.append(line)
-                lines.append(f"\n_{len(exercises)} exercises. Optimal is 5-8 total._")
-                if len(exercises) < 8:
-                    lines.append("Want extras? Say `suggest something` or `I want to hit [muscle]`.")
-                lines.append("\nLog results when ready — one per line or all at once:")
-                lines.append("`1 - 15kg 3x8` · `2 - 80kg 4x5 RPE 7` · `3 - skip`")
-                _open_session(ctx, "gym", "")
-                _schedule_silence(update, ctx)
-                await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
-                return
-        except Exception:
-            pass  # Fall through to free-text gym logging
-
-    _open_session(ctx, intent, text)
-    _schedule_silence(update, ctx)
 
 
 # ── Food confirm/fix buttons ──────────────────────────────────────────────────
