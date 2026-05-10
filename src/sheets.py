@@ -19,13 +19,15 @@ SCOPES = [
 
 
 def _creds():
-    # On Railway, credentials are stored as a JSON string in env var GOOGLE_CREDENTIALS_JSON
-    raw = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-    if raw:
+    # Check both possible env var names for the JSON string
+    raw = os.environ.get("GOOGLE_CREDENTIALS_JSON") or os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+    if raw and raw.strip().startswith("{"):
+        # It's a JSON string — use it directly (Railway deployment)
         info = json.loads(raw)
         return Credentials.from_service_account_info(info, scopes=SCOPES)
-    # Locally, use the file path
-    return Credentials.from_service_account_file(GOOGLE_SERVICE_ACCOUNT_JSON, scopes=SCOPES)
+    # It's a file path — use it as-is (local development)
+    path = raw or GOOGLE_SERVICE_ACCOUNT_JSON
+    return Credentials.from_service_account_file(path, scopes=SCOPES)
 
 
 def _sheet(tab: str):
