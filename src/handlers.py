@@ -104,15 +104,17 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             SUGAR_TARGET = 25.0
             cal_left = DEFAULT_CALORIES - totals["calories"]
             pro_left = DEFAULT_PROTEIN - totals["protein"]
+            t_sugar  = totals["sugar"]
+            sugar_str = "✅" if t_sugar <= SUGAR_TARGET else f"⚠️ over by {t_sugar - SUGAR_TARGET:.0f}g"
             msg = (
                 f"✅ *{meal_type.capitalize()} logged* _(same as last time)_\n"
-                f"• {meal_desc} — {cal}cal · {pro:.0f}g P\n\n"
-                f"*Today: {totals['calories']} / {DEFAULT_CALORIES} cal* "
-                f"({'↓' + str(abs(int(cal_left))) if cal_left > 0 else '✅'})\n"
+                f"• *{meal_desc}* — {cal}cal · {pro:.0f}g P · {carbs:.0f}g C · {fats:.0f}g F\n\n"
+                f"*Day total: {totals['calories']} / {DEFAULT_CALORIES} cal* "
+                f"({'↓' + str(abs(int(cal_left))) + ' to go' if cal_left > 0 else '✅'})\n"
                 f"Protein: {totals['protein']:.0f} / {DEFAULT_PROTEIN}g "
-                f"({'↓' + str(abs(int(pro_left))) + 'g to go' if pro_left > 0 else '✅'})\n"
-                f"Sugar: {totals['sugar']:.0f} / {SUGAR_TARGET:.0f}g "
-                f"{'✅' if totals['sugar'] <= SUGAR_TARGET else '⚠️'}"
+                f"({'↓' + str(abs(int(pro_left))) + 'g' if pro_left > 0 else '✅'})\n"
+                f"Carbs: {totals['carbs']:.0f}g · Fats: {totals['fats']:.0f}g\n"
+                f"Sugar: {t_sugar:.0f} / {SUGAR_TARGET:.0f}g {sugar_str}"
             )
             await query.edit_message_text(msg, parse_mode="Markdown")
         else:
@@ -945,29 +947,51 @@ def _items_to_breakdown_str(items: list) -> str:
 
 
 def _build_food_logged_msg(macros: dict, meal_type: str, totals: dict) -> str:
-    """Confirmation message shown after a meal is logged — items + running day totals."""
+    """Confirmation message shown after a meal is logged — full macros per item + running day totals."""
     SUGAR_TARGET = 25.0
     items = macros.get("items", [])
     lines = [f"✅ *{meal_type.capitalize()} logged*\n"]
+
+    # Per-item breakdown
     if items:
         for item in items:
-            cal  = int(item.get("calories", 0))
-            pro  = float(item.get("protein", 0))
-            lines.append(f"• {item['name']} — {cal}cal · {pro:.0f}g P")
+            cal   = int(item.get("calories", 0))
+            pro   = float(item.get("protein", 0))
+            carb  = float(item.get("carbs", 0))
+            fat   = float(item.get("fats", 0))
+            sugar = float(item.get("sugar", 0))
+            macro_str = f"{cal}cal · {pro:.0f}g P · {carb:.0f}g C · {fat:.0f}g F"
+            if sugar > 0.5:
+                macro_str += f" · {sugar:.0f}g sugar"
+            lines.append(f"• *{item['name']}* — {macro_str}")
         lines.append("")
+
+    # This meal's totals
+    m_cal  = macros.get("calories", 0)
+    m_pro  = macros.get("protein", 0)
+    m_carb = macros.get("carbs", 0)
+    m_fat  = macros.get("fats", 0)
+    m_sug  = macros.get("sugar", 0)
+    lines.append(f"_This meal: {m_cal}cal · {m_pro:.0f}g P · {m_carb:.0f}g C · {m_fat:.0f}g F_\n")
+
+    # Running day totals
     cal_left = DEFAULT_CALORIES - totals["calories"]
     pro_left = DEFAULT_PROTEIN - totals["protein"]
+    sugar    = totals.get("sugar", 0)
     lines.append(
-        f"*Today: {totals['calories']} / {DEFAULT_CALORIES} cal* "
-        f"({'↓' + str(abs(int(cal_left))) if cal_left > 0 else '✅'})"
+        f"*Day total: {totals['calories']} / {DEFAULT_CALORIES} cal* "
+        f"({'↓' + str(abs(int(cal_left))) + ' to go' if cal_left > 0 else '✅ over by ' + str(abs(int(cal_left)))})"
     )
     lines.append(
         f"Protein: {totals['protein']:.0f} / {DEFAULT_PROTEIN}g "
-        f"({'↓' + str(abs(int(pro_left))) + 'g to go' if pro_left > 0 else '✅'})"
+        f"({'↓' + str(abs(int(pro_left))) + 'g' if pro_left > 0 else '✅'})"
     )
-    sugar = totals.get("sugar", 0)
-    sugar_str = "✅" if sugar <= SUGAR_TARGET else f"⚠️ {sugar:.0f}g (over by {sugar - SUGAR_TARGET:.0f}g)"
+    lines.append(
+        f"Carbs: {totals.get('carbs', 0):.0f}g · Fats: {totals.get('fats', 0):.0f}g"
+    )
+    sugar_str = "✅" if sugar <= SUGAR_TARGET else f"⚠️ over by {sugar - SUGAR_TARGET:.0f}g"
     lines.append(f"Sugar: {sugar:.0f} / {SUGAR_TARGET:.0f}g {sugar_str}")
+
     if totals["protein"] < DEFAULT_PROTEIN * 0.5 and totals["meals"] >= 2:
         lines.append("\nProtein's low, Liz. Prioritise it next meal.")
     return "\n".join(lines)
