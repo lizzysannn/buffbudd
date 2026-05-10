@@ -258,6 +258,42 @@ def get_week_food() -> list[dict]:
     return [r for r in rows if _norm_date(r.get("Date", "")) >= week_start]
 
 
+def get_prev_week_food() -> list[dict]:
+    """Return food rows for the previous Mon–Sun week."""
+    from datetime import timedelta
+    ws = _sheet(SHEET_FOOD)
+    rows = ws.get_all_records()
+    today = date.today()
+    this_mon = today - timedelta(days=today.weekday())
+    prev_mon = _norm_date((this_mon - timedelta(days=7)).isoformat())
+    prev_sun = _norm_date((this_mon - timedelta(days=1)).isoformat())
+    return [r for r in rows if prev_mon <= _norm_date(r.get("Date", "")) <= prev_sun]
+
+
+def get_prev_week_gym() -> list[dict]:
+    """Return gym rows for the previous Mon–Sun week."""
+    from datetime import timedelta
+    ws = _sheet(SHEET_GYM)
+    rows = ws.get_all_records()
+    today = date.today()
+    this_mon = today - timedelta(days=today.weekday())
+    prev_mon = _norm_date((this_mon - timedelta(days=7)).isoformat())
+    prev_sun = _norm_date((this_mon - timedelta(days=1)).isoformat())
+    return [r for r in rows if prev_mon <= _norm_date(r.get("Date", "")) <= prev_sun]
+
+
+def get_prev_week_sleep() -> list[dict]:
+    """Return sleep rows for the previous Mon–Sun week."""
+    from datetime import timedelta
+    ws = _sheet(SHEET_SLEEP)
+    rows = ws.get_all_records()
+    today = date.today()
+    this_mon = today - timedelta(days=today.weekday())
+    prev_mon = _norm_date((this_mon - timedelta(days=7)).isoformat())
+    prev_sun = _norm_date((this_mon - timedelta(days=1)).isoformat())
+    return [r for r in rows if prev_mon <= _norm_date(r.get("Date", "")) <= prev_sun]
+
+
 def get_week_gym_days() -> int:
     """Return number of unique gym days this week (Mon–Sun)."""
     rows = get_week_gym()

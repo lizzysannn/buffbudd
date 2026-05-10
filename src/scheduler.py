@@ -23,7 +23,7 @@ def build_scheduler(bot: Bot, event_loop: asyncio.AbstractEventLoop | None = Non
     )
     scheduler.add_job(
         lambda: asyncio.create_task(_weekly_report(bot)),
-        CronTrigger(day_of_week="sun", hour=20, minute=0, timezone=TIMEZONE),
+        CronTrigger(day_of_week="mon", hour=12, minute=0, timezone=TIMEZONE),
         id="weekly_report",
     )
     return scheduler
@@ -46,12 +46,13 @@ async def _daily_summary(bot: Bot):
     sleep = sheets.get_today_sleep()
     gym = sheets.get_today_gym()
 
-    sleep_str = f"{sleep['Hours']}h quality {sleep['Quality']}/5" if sleep else "Not logged"
+    sleep_notes = (sleep.get("Notes") or sleep.get("Quality") or "").strip() if sleep else ""
+    sleep_str = f"{sleep['Hours']}h" + (f" · {sleep_notes}" if sleep_notes else "") if sleep else "Not logged"
     gym_str = f"{len(gym)} sets" if gym else "Rest day"
     recovery = "—"
     if sleep:
-        h, q = float(sleep["Hours"]), int(sleep["Quality"])
-        recovery = "High" if h >= 7 and q >= 4 else "Medium" if h >= 6 and q >= 3 else "Low"
+        h = float(sleep["Hours"])
+        recovery = "High" if h >= 7 else "Medium" if h >= 6 else "Low"
 
     cal_pct = int(totals["calories"] / DEFAULT_CALORIES * 100)
     pro_pct = int(totals["protein"] / DEFAULT_PROTEIN * 100)
@@ -88,41 +89,76 @@ async def _daily_summary(bot: Bot):
 
 
 async def _weekly_report(bot: Bot):
-    food = sheets.get_week_food()
-    gym = sheets.get_week_gym()
-    goals_text = sheets.get_weekly_goals()
+    """Runs Monday 12pm — summarises the previous Mon–Sun week."""
+    from datetime import date, timedelta
+    today = date.today()  # Monday
+    prev_mon = today - timedelta(days=7)
+    prev_sun = today - timedelta(days=1)
+    week_label = f"{prev_mon.strftime('%d %b')} – {prev_sun.strftime('%d %b')}"
 
-    days_with_food = len({r.get("Date") for r in food})
-    avg_cal = sum(int(r.get("Calories", 0)) for r in food) / max(days_with_food, 1)
-    avg_pro = sum(float(r.get("Protein", 0)) for r in food) / max(days_with_food, 1)
-    gym_days = len({r.get("Date") for r in gym})
+    food  = sheets.get_prev_week_food()
+    gym   = sheets.get_prev_week_gym()
+    sleep = sheets.get_prev_week_sleep()
 
+    # ── Nutrition ─────────────────────────────────────────────────────────────
+    days_with_food = len({r.get("Date") for r in food}) or 1
+    avg_cal   = sum(int(r.get("Calories", 0)) for r in food) / days_with_food
+    avg_pro   = sum(float(r.get("Protein", 0)) for r in food) / days_with_food
+    avg_carb  = sum(float(r.get("Carbs", 0)) for r in food) / days_with_food
+    avg_fat   = sum(float(r.get("Fats", 0)) for r in food) / days_with_food
+    avg_sugar = sum(float(r.get("Sugar (g)", 0)) for r in food) / days_with_food
+    SUGAR_TARGET = 25.0
+
+    # ── Gym ───────────────────────────────────────────────────────────────────
+    from src.config import DEFAULT_GYM_SESSIONS_WEEK
+    gym_days = len({r.get("Date") for r in gym if r.get("Date")})
+    gym_hit = gym_days >= DEFAULT_GYM_SESSIONS_WEEK
+
+    # ── Sleep ─────────────────────────────────────────────────────────────────
+    sleep_hours = [float(r.get("Hours", 0)) for r in sleep if r.get("Hours")]
+    avg_sleep = sum(sleep_hours) / len(sleep_hours) if sleep_hours else 0
+    nights_7h = sum(1 for h in sleep_hours if h >= 7)
+
+    # ── Goal score via Claude ─────────────────────────────────────────────────
     week_data = (
         f"Avg daily calories: {avg_cal:.0f} (target {DEFAULT_CALORIES})\n"
         f"Avg daily protein: {avg_pro:.0f}g (target {DEFAULT_PROTEIN}g)\n"
-        f"Training days: {gym_days}\n"
-        f"Food logging days: {days_with_food}"
+        f"Avg daily sugar: {avg_sugar:.1f}g (target <{SUGAR_TARGET}g)\n"
+        f"Gym sessions: {gym_days} (target {DEFAULT_GYM_SESSIONS_WEEK})\n"
+        f"Avg sleep: {avg_sleep:.1f}h · Nights ≥7h: {nights_7h}/7\n"
+        f"Food logged: {days_with_food} days"
     )
-
     try:
+        goals_text = sheets.get_weekly_goals()
         score_report = claude_ai.score_weekly_goals(goals_text, week_data)
     except Exception:
         score_report = "Goal scoring unavailable this week."
 
+    # ── Log to Weekly Summary sheet ───────────────────────────────────────────
     sheets.log_weekly_summary({
-        "week_start": _week_start(),
+        "week_start": prev_mon.strftime("%Y-%m-%d"),
         "avg_calories": f"{avg_cal:.0f}",
         "avg_protein": f"{avg_pro:.0f}",
         "gym_sessions": gym_days,
-        "avg_sleep": "",
+        "avg_sleep": f"{avg_sleep:.1f}",
         "goal_score": "",
         "notes": score_report[:200],
     })
 
+    # ── Send message ──────────────────────────────────────────────────────────
+    cal_status  = "✅" if avg_cal <= DEFAULT_CALORIES else f"⚠️ over by {avg_cal - DEFAULT_CALORIES:.0f}"
+    pro_status  = "✅" if avg_pro >= DEFAULT_PROTEIN else f"❌ avg {avg_pro:.0f}g"
+    sugar_status = "✅" if avg_sugar <= SUGAR_TARGET else f"⚠️ avg {avg_sugar:.1f}g"
+    gym_status  = "✅" if gym_hit else f"❌ {gym_days}/{DEFAULT_GYM_SESSIONS_WEEK}"
+
     msg = (
-        "*Weekly Report*\n\n"
-        f"{week_data}\n\n"
-        f"*Goal Review*\n{score_report}"
+        f"*Weekly Report — {week_label}*\n\n"
+        f"🍱 Calories: {avg_cal:.0f} / {DEFAULT_CALORIES} {cal_status}\n"
+        f"💪 Protein: {avg_pro:.0f}g / {DEFAULT_PROTEIN}g {pro_status}\n"
+        f"🍬 Sugar: {avg_sugar:.1f}g / {SUGAR_TARGET:.0f}g {sugar_status}\n"
+        f"🏋️ Gym: {gym_days} / {DEFAULT_GYM_SESSIONS_WEEK} sessions {gym_status}\n"
+        f"😴 Sleep: avg {avg_sleep:.1f}h · {nights_7h}/7 nights ≥7h\n\n"
+        f"*Goal Review*\n_{score_report}_"
     )
     await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="Markdown")
 
