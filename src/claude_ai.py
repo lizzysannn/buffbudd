@@ -96,31 +96,53 @@ def analyse_food_photo(image_bytes: bytes, mime_type: str = "image/jpeg", captio
 
 
 def analyse_food_text(text: str, meal_history: list[str] | None = None) -> dict:
-    history_block = ""
     if meal_history:
-        history_block = (
-            "\n\nUSER'S LOGGED MEAL HISTORY FOR THIS MEAL SLOT (most recent first):\n"
-            + "\n".join(f"- {m}" for m in meal_history)
-            + "\n\nCRITICAL RULES when history exists:\n"
-            "1. Use EXACT portions from history unless the user explicitly states otherwise.\n"
-            "2. If the user says a vague word like 'sandwich', 'my usual', 'same as always' — match it to the most recent logged meal.\n"
-            "3. Do NOT invent your own portion sizes — trust the log.\n"
+        # Use the most recent meal as a structured lookup table.
+        # Split it into individual items so Claude has explicit portion lines to copy.
+        most_recent = meal_history[0]
+        prev_items = [item.strip() for item in most_recent.split(", ") if item.strip()]
+        items_block = "\n".join(f"  - {item}" for item in prev_items)
+
+        prompt = (
+            "MEAL LOGGING — HISTORY MATCHING\n\n"
+            "User's confirmed portion sizes from their last logged meal of this type:\n"
+            f"{items_block}\n\n"
+            f"New meal to log: \"{text}\"\n\n"
+            "Step 1: For each food word in the new meal, find the matching item in the list above.\n"
+            "Step 2: Use the EXACT item name (including quantity) from the list — do not change it.\n"
+            "Step 3: Only use a different quantity if the user explicitly states one (e.g. 'THREE eggs').\n"
+            "Step 4: For any item not in the history list, estimate normally.\n\n"
+            "Matching rules:\n"
+            "  'egg' / 'eggs' → match any 'egg' item in history, copy it exactly\n"
+            "  'bread' / 'sandwich' / 'toast' → match any 'bread' or 'toast' item in history\n"
+            "  'pbb' / 'peanut butter' / 'pb' → match any 'peanut butter' item in history\n"
+            "  'coffee' → match any 'coffee' item in history\n"
+            "  'oats' / 'oatmeal' → match any 'oat' item in history\n\n"
+            "Include ALL items, even near-zero (black coffee = ~5 cal).\n"
+            "sugar = total sugars in grams (eggs/meat/veg ≈ 0, bread/fruit/dairy = some).\n\n"
+            "Reply in this exact JSON format only:\n"
+            "{\n"
+            '  "meal_type": "breakfast|lunch|dinner|snack|supper|NONE",\n'
+            '  "note": "one-line Buff Buddy style response",\n'
+            '  "items": [\n'
+            '    {"name": "<exact item name from history or new item>", "calories": 0, "protein": 0.0, "carbs": 0.0, "fats": 0.0, "sugar": 0.0}\n'
+            "  ]\n"
+            "}"
         )
-    prompt = (
-        "Analyse this meal description and estimate macros per item. "
-        "Include EVERY item mentioned, even near-zero items (e.g. black coffee = ~5 cal)."
-        f"{history_block}\n"
-        "Reply in this exact JSON format, nothing else:\n"
-        "{\n"
-        '  "meal_type": "breakfast|lunch|dinner|snack|supper|NONE",\n'
-        '  "note": "one-line Buff Buddy style response",\n'
-        '  "items": [\n'
-        '    {"name": "item name", "calories": 0, "protein": 0.0, "carbs": 0.0, "fats": 0.0, "sugar": 0.0}\n'
-        "  ]\n"
-        "}\n\n"
-        "sugar = total sugars in grams. Eggs/meat/veg ≈ 0. Fruit/dairy/bread = some. Sweets/sauces = higher.\n\n"
-        f"Meal: {text}"
-    )
+    else:
+        prompt = (
+            f"Log this meal: {text}\n\n"
+            "Include ALL items, even near-zero (black coffee = ~5 cal).\n"
+            "sugar = total sugars in grams.\n\n"
+            "Reply in this exact JSON format only:\n"
+            "{\n"
+            '  "meal_type": "breakfast|lunch|dinner|snack|supper|NONE",\n'
+            '  "note": "one-line Buff Buddy style response",\n'
+            '  "items": [\n'
+            '    {"name": "item name", "calories": 0, "protein": 0.0, "carbs": 0.0, "fats": 0.0, "sugar": 0.0}\n'
+            "  ]\n"
+            "}"
+        )
     return _parse_itemised_response(_call(prompt, max_tokens=600))
 
 

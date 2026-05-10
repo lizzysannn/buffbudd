@@ -107,6 +107,17 @@ def get_recent_meal_descriptions(meal_type: str = "", limit: int = 8) -> list[st
     return result
 
 
+def get_last_meal_entry(meal_type: str = "") -> dict | None:
+    """Return the most recent food log row (with macros) for the given meal type."""
+    ws = _sheet(SHEET_FOOD)
+    rows = ws.get_all_records()
+    if meal_type:
+        rows = [r for r in rows if str(r.get("Meal Type", "")).lower() == meal_type.lower()]
+    if not rows:
+        return None
+    return rows[-1]  # Most recent
+
+
 def get_food_by_date(date_str: str) -> list[dict]:
     ws = _sheet(SHEET_FOOD)
     rows = ws.get_all_records()

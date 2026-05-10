@@ -52,6 +52,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── Food confirm/fix/cancel ───────────────────────────────────────────────
     if data == "confirm_food":
         pending = ctx.user_data.pop("pending_food", None)
+        ctx.user_data.pop("last_meal_entry", None)
         if pending:
             m, mt = pending["macros"], pending["meal_type"]
             sheets.log_food(m["description"], m["calories"], m["protein"], m["carbs"], m["fats"], mt, pending.get("log_date", ""), m.get("sugar", 0.0))
@@ -69,13 +70,42 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 msg += f"\nSugar's over {SUGAR_TARGET:.0f}g today — watch the sweet stuff."
             await query.edit_message_text(msg)
 
+    elif data == "confirm_food_repeat":
+        # Log exact macros from the last stored meal — no Claude re-parsing
+        last = ctx.user_data.pop("last_meal_entry", None)
+        ctx.user_data.pop("pending_food", None)
+        if last:
+            pending_food = ctx.user_data.get("pending_food", {})
+            log_date = pending_food.get("log_date", "") if pending_food else ""
+            meal_desc = str(last.get("Meal", ""))
+            cal = int(last.get("Calories", 0))
+            pro = float(last.get("Protein", 0))
+            carbs = float(last.get("Carbs", 0))
+            fats = float(last.get("Fats", 0))
+            sugar = float(last.get("Sugar (g)", 0))
+            meal_type = str(last.get("Meal Type", sheets.infer_meal_type_from_time()))
+            sheets.log_food(meal_desc, cal, pro, carbs, fats, meal_type, log_date, sugar)
+            totals = sheets.get_today_totals()
+            SUGAR_TARGET = 25.0
+            msg = (
+                f"✅ Logged (same as last time).\n"
+                f"Today: {totals['calories']} / {DEFAULT_CALORIES} cal · "
+                f"Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g · "
+                f"Sugar {totals['sugar']:.0f} / {SUGAR_TARGET:.0f}g"
+            )
+            await query.edit_message_text(msg)
+        else:
+            await query.edit_message_text("Couldn't find last entry — try logging again.")
+
     elif data == "fix_food":
         await query.edit_message_reply_markup(reply_markup=None)
         ctx.user_data["awaiting_fix"] = "food"
+        ctx.user_data.pop("last_meal_entry", None)
         await query.message.reply_text("What's wrong? Tell me and I'll re-analyse.")
 
     elif data == "cancel_food":
         ctx.user_data.pop("pending_food", None)
+        ctx.user_data.pop("last_meal_entry", None)
         await query.edit_message_text("Cancelled — nothing logged.")
 
     # ── Sleep confirm/fix/cancel ──────────────────────────────────────────────
@@ -198,7 +228,12 @@ async def _log_meal_text(text: str, reply, ctx=None, meal_type: str = ""):
         log_date = claude_ai.extract_log_date(text)
         inferred_type = meal_type or sheets.infer_meal_type_from_time()
         meal_history = sheets.get_recent_meal_descriptions(inferred_type)
+
+        # ── "Same as last time" shortcut ──────────────────────────────────────
+        # Retrieve the last full meal row so we can offer a quick-repeat option
+        last_entry = sheets.get_last_meal_entry(inferred_type)
         macros = claude_ai.analyse_food_text(text, meal_history=meal_history)
+
         if macros["calories"] == 0 and macros["protein"] == 0:
             await reply("What did you eat exactly? Give me weights if you have them — e.g. `100g chicken, 150g rice, side salad`")
             return
@@ -207,10 +242,19 @@ async def _log_meal_text(text: str, reply, ctx=None, meal_type: str = ""):
 
         if ctx:
             ctx.user_data["pending_food"] = {"macros": macros, "meal_type": resolved_type, "log_date": log_date}
+            # Store last entry for "same as last time" shortcut
+            if last_entry:
+                ctx.user_data["last_meal_entry"] = last_entry
 
         date_note = f"\n📅 *Logging for {log_date}*" if log_date else ""
         msg = _build_food_preview(macros, resolved_type) + date_note
-        await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("food"))
+
+        # Show "Same as last time" button if a recent meal exists and looks similar
+        keyboard = _confirm_keyboard("food")
+        if last_entry and _meals_look_similar(text, str(last_entry.get("Meal", ""))):
+            keyboard = _confirm_keyboard_with_repeat("food", last_entry)
+
+        await reply(msg, parse_mode="Markdown", reply_markup=keyboard)
     except Exception as e:
         log.error(traceback.format_exc()); await reply(_safe_error(e, "meal logging"))
 
@@ -587,6 +631,41 @@ def _confirm_keyboard(entry_type: str) -> InlineKeyboardMarkup:
     ]])
 
 
+def _confirm_keyboard_with_repeat(entry_type: str, last_entry: dict) -> InlineKeyboardMarkup:
+    """Keyboard with an extra 'Same as last time' button using exact stored macros."""
+    cal = last_entry.get("Calories", "?")
+    pro = last_entry.get("Protein", "?")
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Log it", callback_data=f"confirm_{entry_type}"),
+            InlineKeyboardButton("🔧 Fix this", callback_data=f"fix_{entry_type}"),
+        ],
+        [
+            InlineKeyboardButton(f"🔄 Same as last ({cal} cal · {pro}g P)", callback_data="confirm_food_repeat"),
+        ],
+        [
+            InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{entry_type}"),
+        ],
+    ])
+
+
+def _meals_look_similar(new_text: str, last_description: str) -> bool:
+    """Rough check: does the new meal share enough food words with the last logged one?"""
+    _FOOD_STOPWORDS = {"and", "the", "with", "some", "had", "have", "ate", "eat",
+                       "breakfast", "lunch", "dinner", "snack", "supper", "today", "my"}
+    def keywords(s: str) -> set:
+        return {w.lower() for w in re.split(r"\W+", s) if len(w) > 2 and w.lower() not in _FOOD_STOPWORDS}
+    new_kw = keywords(new_text)
+    last_kw = keywords(last_description)
+    overlap = new_kw & last_kw
+    # Abbreviation bridges
+    if "pbb" in new_kw and any("peanut" in w or "butter" in w for w in last_kw):
+        overlap.add("pbb")
+    if any("egg" in w for w in new_kw) and any("egg" in w for w in last_kw):
+        overlap.add("egg")
+    return len(overlap) >= 2
+
+
 def _gym_confirm_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("✅ Log it", callback_data="confirm_gym"),
@@ -718,7 +797,8 @@ async def cmd_summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     cycle_day, phase = sheets.get_cycle_info()
 
     from datetime import date as _date
-    sleep_str = f"{sleep['Hours']}h · {sleep['Quality']}" if sleep and sleep.get('Quality') else (f"{sleep['Hours']}h" if sleep else "Not logged")
+    sleep_notes = (sleep.get("Notes") or sleep.get("Quality") or "").strip() if sleep else ""
+    sleep_str = f"{sleep['Hours']}h · {sleep_notes}" if sleep and sleep_notes else (f"{sleep['Hours']}h" if sleep else "Not logged")
     gym_str = f"{len(gym)} sets today" if gym else "Rest day"
     cycle_str = f"Day {cycle_day} · {phase}" if cycle_day else "—"
     gym_week = sheets.get_week_gym_days()
@@ -786,7 +866,7 @@ async def cmd_recovery(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No sleep logged today.")
         return
     h = float(sleep["Hours"])
-    notes = sleep.get("Quality", "")
+    notes = (sleep.get("Notes") or sleep.get("Quality") or "").strip()
     recovery = "High" if h >= 7 else "Medium" if h >= 6 else "Low"
     msg = f"Recovery: *{recovery}* — {h}h"
     if notes:
