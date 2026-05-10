@@ -96,14 +96,20 @@ def analyse_food_photo(image_bytes: bytes, mime_type: str = "image/jpeg", captio
 
 
 def analyse_food_text(text: str, meal_history: list[str] | None = None) -> dict:
-    history_line = ""
+    history_block = ""
     if meal_history:
-        history_line = "\nThis user's recent meals for reference — use to infer usual cooking style, portions, and preferences:\n" + "\n".join(f"- {m}" for m in meal_history) + "\n"
+        history_block = (
+            "\n\nUSER'S LOGGED MEAL HISTORY FOR THIS MEAL SLOT (most recent first):\n"
+            + "\n".join(f"- {m}" for m in meal_history)
+            + "\n\nCRITICAL RULES when history exists:\n"
+            "1. Use EXACT portions from history unless the user explicitly states otherwise.\n"
+            "2. If the user says a vague word like 'sandwich', 'my usual', 'same as always' — match it to the most recent logged meal.\n"
+            "3. Do NOT invent your own portion sizes — trust the log.\n"
+        )
     prompt = (
         "Analyse this meal description and estimate macros per item. "
-        "Include EVERY item mentioned, even if macros are near zero (e.g. black coffee = ~5 cal, water = 0). "
-        "Use the meal history to infer cooking style and typical portions when details are vague.\n"
-        f"{history_line}\n"
+        "Include EVERY item mentioned, even near-zero items (e.g. black coffee = ~5 cal)."
+        f"{history_block}\n"
         "Reply in this exact JSON format, nothing else:\n"
         "{\n"
         '  "meal_type": "breakfast|lunch|dinner|snack|supper|NONE",\n'
@@ -112,8 +118,7 @@ def analyse_food_text(text: str, meal_history: list[str] | None = None) -> dict:
         '    {"name": "item name", "calories": 0, "protein": 0.0, "carbs": 0.0, "fats": 0.0, "sugar": 0.0}\n'
         "  ]\n"
         "}\n\n"
-        "sugar = total sugars in grams (natural + added). Whole foods like eggs/meat/veg = near 0. "
-        "Fruit, dairy, bread = natural sugar. Sweets, sauces, flavoured drinks = higher.\n\n"
+        "sugar = total sugars in grams. Eggs/meat/veg ≈ 0. Fruit/dairy/bread = some. Sweets/sauces = higher.\n\n"
         f"Meal: {text}"
     )
     return _parse_itemised_response(_call(prompt, max_tokens=600))
