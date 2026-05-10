@@ -319,10 +319,20 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack", "supper"]
 
 
+def _meal_type_from_text(text: str) -> str:
+    """Check if the user explicitly named a meal type in their message."""
+    lower = text.lower()
+    for mt in ["breakfast", "lunch", "dinner", "supper", "snack"]:
+        if mt in lower:
+            return mt
+    return ""
+
+
 async def _log_meal_text(text: str, reply, ctx=None, meal_type: str = ""):
     try:
         log_date = claude_ai.extract_log_date(text)
-        inferred_type = meal_type or sheets.infer_meal_type_from_time()
+        # Prefer: explicit arg > text mention > time-based inference
+        inferred_type = meal_type or _meal_type_from_text(text) or sheets.infer_meal_type_from_time()
         last_entry = sheets.get_last_meal_entry(inferred_type)
 
         # ── "Same as last time?" — show stored meal first, skip re-analysis ──
