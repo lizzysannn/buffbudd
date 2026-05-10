@@ -1286,7 +1286,14 @@ async def _fetch_and_show_stats(log_date: str, reply):
         else:
             lines.append(f"{gym_needed} more needed · {days_left} day{'s' if days_left != 1 else ''} left")
 
-        await reply("\n".join(lines), parse_mode="Markdown")
+        # Show "Done for Day" button only on today's stats
+        kb = None
+        if log_date == date.today().isoformat():
+            kb = InlineKeyboardMarkup([[
+                InlineKeyboardButton("✅ Done for Day", callback_data="menu_done_day")
+            ]])
+
+        await reply("\n".join(lines), parse_mode="Markdown", reply_markup=kb)
 
     except Exception as e:
         log.error(traceback.format_exc()); await reply(_safe_error(e, "stats fetch"))
