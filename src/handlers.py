@@ -111,7 +111,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def _finalise_session(update: Update, ctx: ContextTypes.DEFAULT_TYPE, via_button: bool = False):
     intent, messages = _close_session(ctx)
-    combined = " ".join(messages)
+    combined = " ".join(messages).strip()
 
     if via_button:
         target = update.callback_query.message
@@ -119,8 +119,11 @@ async def _finalise_session(update: Update, ctx: ContextTypes.DEFAULT_TYPE, via_
     else:
         reply = update.message.reply_text
 
+    if not combined:
+        return
+
     if intent == "meal":
-        await _log_meal_text(combined, reply)
+        await _log_meal_text(combined, reply, ctx=ctx)
     elif intent == "gym":
         await _log_gym_session(combined, ctx, reply)
     elif intent == "recovery":
@@ -137,11 +140,18 @@ async def _finalise_session(update: Update, ctx: ContextTypes.DEFAULT_TYPE, via_
 
 # ── Meal logging ──────────────────────────────────────────────────────────────
 
-async def _log_meal_text(text: str, reply):
+async def _log_meal_text(text: str, reply, ctx=None):
     try:
         macros = claude_ai.analyse_food_text(text)
         if macros["calories"] == 0 and macros["protein"] == 0:
-            await reply("No food found in that. Use GYM for gym, SLEEP for recovery.")
+            # Ask for clarification, keep session open
+            await reply(
+                "What did you eat exactly? Give me weights if you have them — e.g. `100g chicken, 150g rice, side salad`"
+            )
+            if ctx:
+                # Re-open session so next message retries as meal
+                ctx.user_data["session_intent"] = "meal"
+                ctx.user_data["session_messages"] = []
             return
         sheets.log_food(macros["description"], macros["calories"], macros["protein"], macros["carbs"], macros["fats"])
         totals = sheets.get_today_totals()
