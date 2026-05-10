@@ -38,14 +38,21 @@
 
 | Tab name | Headers (one per cell in row 1) |
 |---|---|
-| `Food Log` | Date · Time · Meal Type · Meal · Calories · Protein · Carbs · Fats |
-| `Gym Log` | Date · Time · Exercise · Sets · Reps · Weight · RPE · Notes |
+| `Food Log` | Date · Time · Meal Type · Meal · Calories · Protein · Carbs · Fats · Sugar (g) · Breakdown |
+| `Gym Log` | Date · Time · Exercise · Sets · Reps · Weight · RPE · Notes · Type · Duration (min) |
 | `Sleep Log` | Date · Hours · Quality |
-| `Weekly Summary` | Week Start · Avg Calories · Avg Protein · Gym Sessions · Avg Sleep · Goal Score · Notes |
+| `Weekly Summary` | Week Start · Avg Calories · Avg Protein · Gym Sessions · Avg Sleep · Goal Score · Notes · Weight Start (kg) · Weight End (kg) · Weight Change (kg) · BF Start (%) · BF End (%) · Skeletal Muscle (kg) · Top Feel Tags |
 | `Emotions Log` | Date · Time · Mood (1-10) · Energy (1-10) · Notes · Cycle Day · Phase |
 | `Activity Log` | Date · Activity Type · Duration (mins) · Notes · Cycle Day · Phase |
 | `Cycle Log` | Date · Cycle Day · Phase · Symptoms · Flow · Notes |
+| `Body Log` | Date · Weight (kg) · Body Fat (%) · Body Feel · Notes |
 | `Exercise Catalogue` | Exercise Name · Muscle Group · Set · Sets · Last Weight (kg) · Last Used · Notes |
+
+> **Column notes:**
+> - `Gym Log` col I = `Type` (`strength` or `cardio`) · col J = `Duration (min)` (cardio only)
+> - `Food Log` col I = `Sugar (g)` · col J = `Breakdown` (auto-filled, stores per-item detail)
+> - `Weekly Summary` cols H–N = body composition columns, auto-filled by Sunday weekly report
+> - `Body Log` is logged when you send your morning weight/body feel check-in
 
 3. Share the sheet with the service account email (Editor access)
 4. Copy the Spreadsheet ID from the URL:

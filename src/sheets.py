@@ -364,14 +364,22 @@ def get_week_gym_days() -> int:
 
 def get_week_cardio_sessions(min_minutes: int = 30) -> int:
     """Return number of cardio sessions ≥ min_minutes this week."""
+    import re as _re
     from collections import defaultdict
+    _dur_re = _re.compile(r'(\d+)\s*min', _re.IGNORECASE)
     rows = get_week_gym()
     # Sum cardio duration per day, count days that hit the threshold
     day_duration: dict[str, int] = defaultdict(int)
     for r in rows:
         if str(r.get("Type", "")).lower() == "cardio":
             try:
-                day_duration[_norm_date(r.get("Date", ""))] += int(r.get("Duration (min)", 0))
+                dur = int(r.get("Duration (min)", 0) or 0)
+                # Fallback: parse duration from Notes if duration column is empty
+                if dur == 0:
+                    m = _dur_re.search(str(r.get("Notes", "")))
+                    if m:
+                        dur = int(m.group(1))
+                day_duration[_norm_date(r.get("Date", ""))] += dur
             except (ValueError, TypeError):
                 pass
     return sum(1 for d in day_duration.values() if d >= min_minutes)

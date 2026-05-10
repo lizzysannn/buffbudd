@@ -224,11 +224,17 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pending = ctx.user_data.pop("pending_gym", None)
         if pending:
             log_date = pending.get("log_date", "")
+            _dur_re = re.compile(r'(\d+)\s*min', re.IGNORECASE)
             for r in pending.get("results", []):
                 if not r.get("skipped"):
                     w = r.get("weight_kg", r.get("weight", 0))
                     ex_type = r.get("type", "strength")
                     dur = int(r.get("duration_min", 0) or 0)
+                    # Fallback: extract duration from notes if cardio duration wasn't parsed
+                    if ex_type == "cardio" and dur == 0:
+                        m = _dur_re.search(str(r.get("notes", "")))
+                        if m:
+                            dur = int(m.group(1))
                     sheets.log_gym(r["exercise"], r["sets"], r["reps"], w, r.get("rpe"), r.get("notes", ""), log_date, ex_type, dur)
                     if w > 0:
                         sheets.update_exercise_weight(r["exercise"], w)

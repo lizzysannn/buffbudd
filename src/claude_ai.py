@@ -239,9 +239,11 @@ def parse_session_results(exercise_list: list, user_input: str) -> list:
         '[{"number":1,"exercise":"name","weight_kg":0,"sets":0,"reps":0,"rpe":null,"skipped":false,"notes":"","type":"strength","duration_min":0}]\n\n'
         "Rules:\n"
         "- Match by number or name. If not mentioned set skipped:true. weight_kg=0 for bodyweight.\n"
-        "- For cardio (treadmill, stairmaster, cycling, rowing, elliptical, running, walking, HIIT): set type=cardio, duration_min=total minutes, sets/reps/weight=0.\n"
+        "- For cardio (treadmill, stairmaster, stair master, cycling, rowing, elliptical, running, walking, HIIT, bike): "
+        "set type=cardio, sets/reps/weight=0. ALWAYS extract duration_min from the user's text (e.g. '20 min', '30 minutes', 'Level 5 20min' → duration_min=20). Never leave duration_min=0 for cardio.\n"
         "- For strength: type=strength, duration_min=0.\n"
-        "- Also include any cardio mentioned that is NOT in the exercise list — add it as an extra entry with number=0."
+        "- Also include any cardio mentioned that is NOT in the exercise list — add it as an extra entry with number=0.\n"
+        "- Put the full user description (e.g. '20 min, Level 5') in the notes field for cardio entries."
     )
     text = _call(prompt, max_tokens=800)
     start = text.find("[")
