@@ -246,6 +246,15 @@ def get_today_emotions() -> dict | None:
     return matches[-1] if matches else None
 
 
+def get_emotions_by_date(date_str: str) -> dict | None:
+    """Return emotions log row for a specific date, or None."""
+    ws = _sheet(SHEET_EMOTIONS)
+    rows = ws.get_all_records()
+    target = _norm_date(date_str)
+    matches = [r for r in rows if _norm_date(r.get("Date", "")) == target]
+    return matches[-1] if matches else None
+
+
 # ── Weekly Summary ────────────────────────────────────────────────────────────
 
 def log_weekly_summary(data: dict):

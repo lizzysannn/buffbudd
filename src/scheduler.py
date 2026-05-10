@@ -42,14 +42,23 @@ async def _sleep_checkin(bot: Bot):
 
 
 async def _daily_summary(bot: Bot):
-    from datetime import date as _date
+    from datetime import date as _date, timedelta
     SUGAR_TARGET = 25.0
+
+    today     = _date.today()
+    yesterday = (today - timedelta(days=1)).isoformat()
 
     totals   = sheets.get_today_totals()
     sleep    = sheets.get_today_sleep()
     gym      = sheets.get_today_gym()
     emotions = sheets.get_today_emotions()
-    body     = sheets.get_body_by_date(_date.today().isoformat())
+    body     = sheets.get_body_by_date(today.isoformat())
+
+    # Yesterday's data for comparison
+    yest_food     = sheets.get_food_by_date(yesterday)
+    yest_sleep    = sheets.get_sleep_by_date(yesterday)
+    yest_gym      = sheets.get_gym_by_date(yesterday)
+    yest_emotions = sheets.get_emotions_by_date(yesterday)
 
     today_str = _date.today().strftime("%a, %d %b")
     lines = [f"*Evening Check-in — {today_str}*\n"]
@@ -132,6 +141,44 @@ async def _daily_summary(bot: Bot):
         lines.append("Not logged")
     lines.append("")
 
+    # ── vs Yesterday (succinct delta) ────────────────────────────────────────
+    yest_cal  = sum(int(r.get("Calories", 0)) for r in yest_food)
+    yest_pro  = sum(float(r.get("Protein", 0)) for r in yest_food)
+    yest_sug  = sum(float(r.get("Sugar (g)", 0)) for r in yest_food)
+    yest_sleep_h = float(yest_sleep.get("Hours", 0)) if yest_sleep else None
+    yest_mood    = yest_emotions.get("Mood") if yest_emotions else None
+
+    if yest_food or yest_sleep or yest_gym:
+        lines.append("📊 *vs Yesterday*")
+        delta_parts = []
+
+        # Calories
+        if yest_cal:
+            d = cal - yest_cal
+            arrow = "↑" if d > 0 else "↓"
+            delta_parts.append(f"Cal {yest_cal}→{cal} ({arrow}{abs(d)})")
+
+        # Protein
+        if yest_pro:
+            d = pro - yest_pro
+            arrow = "↑" if d > 0 else "↓"
+            delta_parts.append(f"P {yest_pro:.0f}g→{pro:.0f}g ({arrow}{abs(d):.0f}g)")
+
+        # Sleep
+        if yest_sleep_h is not None and sleep:
+            d = float(sleep.get("Hours", 0)) - yest_sleep_h
+            arrow = "↑" if d > 0 else "↓"
+            delta_parts.append(f"Sleep {yest_sleep_h}h→{sleep.get('Hours')}h ({arrow}{abs(d):.1f}h)")
+
+        # Gym
+        if yest_gym and not gym:
+            delta_parts.append("Gym: active→rest")
+        elif not yest_gym and gym:
+            delta_parts.append("Gym: rest→active 💪")
+
+        lines.append(" · ".join(delta_parts) if delta_parts else "No comparable data")
+        lines.append("")
+
     # ── What's missing + coaching note ────────────────────────────────────────
     missing = []
     if not sleep:    missing.append("sleep")
@@ -150,8 +197,17 @@ async def _daily_summary(bot: Bot):
         f"Mood: {mood_str_ctx}\n"
         f"Body weight: {weight_str_ctx}"
     )
+    yesterday_context_for_claude = (
+        f"Calories: {yest_cal}, Protein: {yest_pro:.0f}g, Sugar: {yest_sug:.0f}g, "
+        f"Sleep: {f'{yest_sleep_h}h' if yest_sleep_h else 'not logged'}, "
+        f"Mood: {f'{yest_mood}/10' if yest_mood else 'not logged'}, "
+        f"Gym: {'yes' if yest_gym else 'no'}"
+    ) if (yest_food or yest_sleep) else ""
+
     try:
-        note = claude_ai.generate_daily_summary_note(context_for_claude, missing)
+        note = claude_ai.generate_daily_summary_note(
+            context_for_claude, missing, yesterday_context_for_claude
+        )
     except Exception:
         note = "Day's logged. Keep going."
 
