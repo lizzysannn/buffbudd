@@ -70,10 +70,31 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 msg += f"\nSugar's over {SUGAR_TARGET:.0f}g today — watch the sweet stuff."
             await query.edit_message_text(msg)
 
+    elif data == "reanalyse_food":
+        # User said meals are different — run full Claude analysis on original text
+        original_text = ctx.user_data.pop("pending_food_text", "")
+        inferred_type = ctx.user_data.pop("pending_food_type", "")
+        log_date = ctx.user_data.pop("pending_food_date", None)
+        ctx.user_data.pop("last_meal_entry", None)
+        if original_text:
+            await query.edit_message_text("Re-analysing...")
+            meal_history = sheets.get_recent_meal_descriptions(inferred_type)
+            macros = claude_ai.analyse_food_text(original_text, meal_history=meal_history)
+            resolved_type = inferred_type or macros.get("meal_type") or sheets.infer_meal_type_from_time()
+            ctx.user_data["pending_food"] = {"macros": macros, "meal_type": resolved_type, "log_date": log_date}
+            date_note = f"\n📅 *Logging for {log_date}*" if log_date else ""
+            msg = _build_food_preview(macros, resolved_type) + date_note
+            await query.message.reply_text(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("food"))
+        else:
+            await query.edit_message_text("Lost the original text — try sending your meal again.")
+
     elif data == "confirm_food_repeat":
         # Log exact macros from the last stored meal — no Claude re-parsing
         last = ctx.user_data.pop("last_meal_entry", None)
         ctx.user_data.pop("pending_food", None)
+        ctx.user_data.pop("pending_food_text", None)
+        ctx.user_data.pop("pending_food_type", None)
+        ctx.user_data.pop("pending_food_date", None)
         if last:
             pending_food = ctx.user_data.get("pending_food", {})
             log_date = pending_food.get("log_date", "") if pending_food else ""
@@ -106,6 +127,9 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data == "cancel_food":
         ctx.user_data.pop("pending_food", None)
         ctx.user_data.pop("last_meal_entry", None)
+        ctx.user_data.pop("pending_food_text", None)
+        ctx.user_data.pop("pending_food_type", None)
+        ctx.user_data.pop("pending_food_date", None)
         await query.edit_message_text("Cancelled — nothing logged.")
 
     # ── Sleep confirm/fix/cancel ──────────────────────────────────────────────
@@ -299,11 +323,41 @@ async def _log_meal_text(text: str, reply, ctx=None, meal_type: str = ""):
     try:
         log_date = claude_ai.extract_log_date(text)
         inferred_type = meal_type or sheets.infer_meal_type_from_time()
-        meal_history = sheets.get_recent_meal_descriptions(inferred_type)
-
-        # ── "Same as last time" shortcut ──────────────────────────────────────
-        # Retrieve the last full meal row so we can offer a quick-repeat option
         last_entry = sheets.get_last_meal_entry(inferred_type)
+
+        # ── "Same as last time?" — show stored meal first, skip re-analysis ──
+        if last_entry and _meals_look_similar(text, str(last_entry.get("Meal", ""))):
+            if ctx:
+                ctx.user_data["last_meal_entry"] = last_entry
+                ctx.user_data["pending_food_text"] = text
+                ctx.user_data["pending_food_type"] = inferred_type
+                ctx.user_data["pending_food_date"] = log_date
+
+            meal_desc = str(last_entry.get("Meal", ""))
+            cal  = last_entry.get("Calories", 0)
+            pro  = last_entry.get("Protein", 0)
+            carb = last_entry.get("Carbs", 0)
+            fat  = last_entry.get("Fats", 0)
+            sugar = last_entry.get("Sugar (g)", 0)
+            last_date = last_entry.get("Date", "")
+
+            date_note = f"\n📅 *Logging for {log_date}*" if log_date else ""
+            msg = (
+                f"*Same as last time?* _(from {last_date})_\n\n"
+                f"_{meal_desc}_\n\n"
+                f"{cal} cal · {pro}g P · {carb}g C · {fat}g F · {sugar}g sugar"
+                f"{date_note}"
+            )
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Yes, same meal", callback_data="confirm_food_repeat")],
+                [InlineKeyboardButton("✏️ Different — re-analyse", callback_data="reanalyse_food")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="cancel_food")],
+            ])
+            await reply(msg, parse_mode="Markdown", reply_markup=keyboard)
+            return
+
+        # ── No similar recent meal — full Claude analysis ─────────────────────
+        meal_history = sheets.get_recent_meal_descriptions(inferred_type)
         macros = claude_ai.analyse_food_text(text, meal_history=meal_history)
 
         if macros["calories"] == 0 and macros["protein"] == 0:
@@ -314,19 +368,10 @@ async def _log_meal_text(text: str, reply, ctx=None, meal_type: str = ""):
 
         if ctx:
             ctx.user_data["pending_food"] = {"macros": macros, "meal_type": resolved_type, "log_date": log_date}
-            # Store last entry for "same as last time" shortcut
-            if last_entry:
-                ctx.user_data["last_meal_entry"] = last_entry
 
         date_note = f"\n📅 *Logging for {log_date}*" if log_date else ""
         msg = _build_food_preview(macros, resolved_type) + date_note
-
-        # Show "Same as last time" button if a recent meal exists and looks similar
-        keyboard = _confirm_keyboard("food")
-        if last_entry and _meals_look_similar(text, str(last_entry.get("Meal", ""))):
-            keyboard = _confirm_keyboard_with_repeat("food", last_entry)
-
-        await reply(msg, parse_mode="Markdown", reply_markup=keyboard)
+        await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("food"))
     except Exception as e:
         log.error(traceback.format_exc()); await reply(_safe_error(e, "meal logging"))
 
@@ -815,20 +860,35 @@ def _confirm_keyboard_with_repeat(entry_type: str, last_entry: dict) -> InlineKe
     ])
 
 
+def _normalise_meal_text(s: str) -> str:
+    """Expand shorthand so similarity matching works."""
+    s = s.lower()
+    s = re.sub(r"\bpbb\b", "peanut butter", s)
+    s = re.sub(r"\bpb\b", "peanut butter", s)
+    s = re.sub(r"\bsandwich\b", "bread", s)
+    s = re.sub(r"\btoast\b", "bread", s)
+    s = re.sub(r"\bcoffee\b", "coffee", s)
+    return s
+
+
 def _meals_look_similar(new_text: str, last_description: str) -> bool:
-    """Rough check: does the new meal share enough food words with the last logged one?"""
-    _FOOD_STOPWORDS = {"and", "the", "with", "some", "had", "have", "ate", "eat",
-                       "breakfast", "lunch", "dinner", "snack", "supper", "today", "my"}
+    """Check if new meal text likely refers to the same meal as last logged one."""
+    _STOPWORDS = {"and", "the", "with", "some", "had", "have", "ate", "eat", "for",
+                  "breakfast", "lunch", "dinner", "snack", "supper", "today", "my",
+                  "just", "bit", "half", "boiled", "slice", "tablespoon", "tbsp"}
+
     def keywords(s: str) -> set:
-        return {w.lower() for w in re.split(r"\W+", s) if len(w) > 2 and w.lower() not in _FOOD_STOPWORDS}
-    new_kw = keywords(new_text)
+        s = _normalise_meal_text(s)
+        return {w for w in re.split(r"\W+", s) if len(w) > 2 and w not in _STOPWORDS}
+
+    new_kw  = keywords(new_text)
     last_kw = keywords(last_description)
     overlap = new_kw & last_kw
-    # Abbreviation bridges
-    if "pbb" in new_kw and any("peanut" in w or "butter" in w for w in last_kw):
-        overlap.add("pbb")
+
+    # Extra bridges: egg variants
     if any("egg" in w for w in new_kw) and any("egg" in w for w in last_kw):
         overlap.add("egg")
+
     return len(overlap) >= 2
 
 
