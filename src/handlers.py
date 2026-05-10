@@ -859,13 +859,26 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     # Done-for-day always wins — even if gym state is pending
-    from src.router import _DONE_RE
+    from src.router import _DONE_RE, _NO_RE
     if _DONE_RE.search(text):
         ctx.user_data.pop("awaiting_gym_results", None)
         ctx.user_data.pop("gym_exercises", None)
         ctx.user_data.pop("gym_set_name", None)
         await _handle_done_for_day(reply)
         return
+
+    # "no" / "nope" / "never mind" while any state is pending → clear + show menu
+    if _NO_RE.match(text.strip()):
+        had_state = any([
+            ctx.user_data.pop("awaiting_gym_results", None),
+            ctx.user_data.pop("awaiting_menu_log", None),
+            ctx.user_data.pop("awaiting_fix", None),
+        ])
+        ctx.user_data.pop("gym_exercises", None)
+        ctx.user_data.pop("gym_set_name", None)
+        if had_state:
+            await reply("No worries. What's up?", reply_markup=_main_menu_keyboard())
+            return
 
     # Gym results flow — waiting for the user to report back after seeing the list
     if ctx.user_data.get("awaiting_gym_results"):

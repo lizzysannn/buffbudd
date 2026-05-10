@@ -44,6 +44,12 @@ _STATS_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Plain rejection — clears any pending state and shows menu
+_NO_RE = re.compile(
+    r"^(no|nope|nah|never\s*mind|nevermind|cancel|nvm|not\s+now|stop|skip\s+it)\.?$",
+    re.IGNORECASE,
+)
+
 # Done for the day: end-of-day wrap-up
 _DONE_RE = re.compile(
     r"\b(done\s+for\s+(the\s+)?day|i'?m\s+done\s+for\s+(the\s+)?day|that'?s?\s+(it\s+)?for\s+today|"
