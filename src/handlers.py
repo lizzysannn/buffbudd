@@ -227,6 +227,51 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data.pop("muscle_suggestions", None)
         await query.edit_message_text("Got it — no changes to catalogue.")
 
+    # ── Main menu callbacks ───────────────────────────────────────────────────
+    elif data.startswith("menu_"):
+        action = data[5:]  # strip "menu_"
+        await query.edit_message_reply_markup(reply_markup=None)
+        reply = query.message.reply_text
+
+        if action == "log_food":
+            ctx.user_data["awaiting_fix"] = None
+            await reply("What did you eat? Describe it and I'll log the macros.")
+            ctx.user_data["awaiting_menu_log"] = "food"
+
+        elif action == "log_gym":
+            await _show_gym_list(update, ctx)
+
+        elif action == "log_sleep":
+            await reply("How did you sleep? Tell me hours and anything worth noting.")
+            ctx.user_data["awaiting_menu_log"] = "sleep"
+
+        elif action == "log_mood":
+            await reply("How are you feeling? Mood, energy, what's on your mind.")
+            ctx.user_data["awaiting_menu_log"] = "emotions"
+
+        elif action == "log_body":
+            await reply("Weight and/or how your body feels today (e.g. 52.3kg, feeling strong, bit sore).")
+            ctx.user_data["awaiting_menu_log"] = "body"
+
+        elif action == "log_period":
+            await _log_period("period started", reply, bot=ctx.bot, chat_id=TELEGRAM_CHAT_ID)
+
+        elif action == "today":
+            await _handle_stats_query("stats for today", reply)
+
+        elif action == "yesterday":
+            await _handle_stats_query("stats for yesterday", reply)
+
+        elif action == "week":
+            await _handle_week_stats(reply)
+
+        elif action == "pick_day":
+            await reply("Which day? (e.g. last Monday, May 5, 3 days ago)")
+            ctx.user_data["awaiting_menu_log"] = "pick_day"
+
+        elif action == "quest":
+            await _handle_quest_check(reply)
+
     elif data.startswith("intent_"):
         intent = data.replace("intent_", "")
         messages = ctx.user_data.pop("pending_messages", [])
@@ -683,6 +728,26 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await reply(_safe_error(e, "correction"))
         return
 
+    # "menu" or "help" shortcut
+    if text.lower().strip() in {"menu", "help", "hi", "hey"}:
+        await reply("What are we doing?", reply_markup=_main_menu_keyboard())
+        return
+
+    # Menu-triggered log flow
+    if ctx.user_data.get("awaiting_menu_log"):
+        mode = ctx.user_data.pop("awaiting_menu_log")
+        if mode == "food":
+            await _log_meal_text(text, reply, ctx=ctx)
+        elif mode == "sleep":
+            await _log_recovery(text, reply, ctx=ctx)
+        elif mode == "emotions":
+            await _log_emotions(text, reply, ctx=ctx)
+        elif mode == "body":
+            await _log_body_checkin(text, reply, ctx=ctx)
+        elif mode == "pick_day":
+            await _handle_stats_query(text, reply)
+        return
+
     # Gym results flow — waiting for the user to report back after seeing the list
     if ctx.user_data.get("awaiting_gym_results"):
         ctx.user_data.pop("awaiting_gym_results", None)
@@ -1001,6 +1066,79 @@ async def _handle_week_stats(reply):
         log.error(traceback.format_exc()); await reply(_safe_error(e, "week stats"))
 
 
+# ── Quest check ───────────────────────────────────────────────────────────────
+
+async def _handle_quest_check(reply):
+    """Show what's left to hit this week's targets."""
+    try:
+        from datetime import date, timedelta
+        today = date.today()
+        days_elapsed = today.weekday() + 1   # Mon=1 … Sun=7
+        days_left = 7 - days_elapsed
+
+        food_week  = sheets.get_week_food()
+        gym_week   = sheets.get_week_gym()
+
+        # ── Gym ───────────────────────────────────────────────────────────────
+        gym_days  = sheets.get_week_gym_days()
+        gym_needed = max(0, DEFAULT_GYM_SESSIONS_WEEK - gym_days)
+        gym_line = (
+            f"🏋️ Gym: {gym_days} / {DEFAULT_GYM_SESSIONS_WEEK} sessions — "
+            + ("✅ done!" if gym_needed == 0 else f"{gym_needed} more to go · {days_left}d left")
+        )
+
+        # ── Nutrition (daily averages so far this week) ───────────────────────
+        food_days = len({r.get("Date") for r in food_week}) or 1
+        avg_cal  = sum(int(r.get("Calories", 0)) for r in food_week) / food_days
+        avg_pro  = sum(float(r.get("Protein", 0)) for r in food_week) / food_days
+        avg_sugar = sum(float(r.get("Sugar (g)", 0)) for r in food_week) / food_days
+        SUGAR_TARGET = 25.0
+
+        cal_status = "✅" if avg_cal <= DEFAULT_CALORIES else f"⚠️ avg {avg_cal:.0f} (over by {avg_cal - DEFAULT_CALORIES:.0f})"
+        pro_status = "✅" if avg_pro >= DEFAULT_PROTEIN else f"❌ avg {avg_pro:.0f}g (need +{DEFAULT_PROTEIN - avg_pro:.0f}g/day)"
+        sugar_status = "✅" if avg_sugar <= SUGAR_TARGET else f"⚠️ avg {avg_sugar:.0f}g (over by {avg_sugar - SUGAR_TARGET:.0f}g)"
+
+        # ── Sleep ─────────────────────────────────────────────────────────────
+        from datetime import timedelta
+        week_start = today - timedelta(days=today.weekday())
+        sleep_days_hit = 0
+        for i in range(days_elapsed):
+            d = (week_start + timedelta(days=i)).isoformat()
+            row = sheets.get_sleep_by_date(d)
+            if row and float(row.get("Hours", 0)) >= 7:
+                sleep_days_hit += 1
+        sleep_line = (
+            f"😴 Sleep 7h+: {sleep_days_hit} / {days_elapsed} days logged"
+            + (" ✅" if sleep_days_hit == days_elapsed else f" · {days_elapsed - sleep_days_hit} night(s) under 7h")
+        )
+
+        # ── Build message ─────────────────────────────────────────────────────
+        lines = [f"*🎯 Quest Check — Week {today.strftime('%b %d')}*\n"]
+        lines.append(gym_line)
+        lines.append(f"🍱 Calories: {cal_status}")
+        lines.append(f"💪 Protein: {pro_status}")
+        lines.append(f"🍬 Sugar: {sugar_status}")
+        lines.append(sleep_line)
+
+        # Summary verdict
+        quests_done = sum([
+            gym_needed == 0,
+            avg_pro >= DEFAULT_PROTEIN,
+            avg_cal <= DEFAULT_CALORIES,
+            avg_sugar <= SUGAR_TARGET,
+        ])
+        lines.append(f"\n*{quests_done} / 4 nutrition quests on track.*")
+        if days_left > 0:
+            lines.append(f"{days_left} day{'s' if days_left != 1 else ''} left to close the gap.")
+        else:
+            lines.append("Week's done. Quest continues Monday.")
+
+        await reply("\n".join(lines), parse_mode="Markdown")
+
+    except Exception as e:
+        log.error(traceback.format_exc()); await reply(_safe_error(e, "quest check"))
+
+
 # ── Photo handler ─────────────────────────────────────────────────────────────
 
 async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -1017,18 +1155,49 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # ── Commands ──────────────────────────────────────────────────────────────────
 
+def _main_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🍱 Log Food",       callback_data="menu_log_food"),
+            InlineKeyboardButton("🏋️ Log Gym",        callback_data="menu_log_gym"),
+        ],
+        [
+            InlineKeyboardButton("😴 Log Sleep",      callback_data="menu_log_sleep"),
+            InlineKeyboardButton("💬 Log Mood",       callback_data="menu_log_mood"),
+        ],
+        [
+            InlineKeyboardButton("⚖️ Log Body",       callback_data="menu_log_body"),
+            InlineKeyboardButton("🔴 Log Period",     callback_data="menu_log_period"),
+        ],
+        [
+            InlineKeyboardButton("📊 Today",          callback_data="menu_today"),
+            InlineKeyboardButton("📅 Yesterday",      callback_data="menu_yesterday"),
+        ],
+        [
+            InlineKeyboardButton("📈 This Week",      callback_data="menu_week"),
+            InlineKeyboardButton("🗓 Pick a Day",     callback_data="menu_pick_day"),
+        ],
+        [
+            InlineKeyboardButton("🎯 Quest Check",    callback_data="menu_quest"),
+        ],
+    ])
+
+
+async def cmd_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _is_authorised(update):
+        return await _deny(update)
+    await update.message.reply_text(
+        "What are we doing?", reply_markup=_main_menu_keyboard()
+    )
+
+
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not _is_authorised(update):
         return await _deny(update)
     await update.message.reply_text(
         "Buff Buddy online. Game time.\n\n"
-        "Just talk to me naturally:\n"
-        "• Describe food → I'll log macros\n"
-        "• Say `GYM` → I'll pull your exercise list\n"
-        "• Tell me how you slept → logged\n"
-        "• Tell me how you feel → logged\n"
-        "• Say you got your period → cycle tracker starts\n\n"
-        "Commands: /summary /week /weight /goals /recovery /streak /pb",
+        "Talk to me naturally, or tap /menu for quick options.\n\n"
+        "Commands: /menu /summary /week /weight /goals /recovery /streak /pb",
         parse_mode="Markdown",
     )
 

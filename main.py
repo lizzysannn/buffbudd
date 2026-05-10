@@ -8,7 +8,7 @@ from telegram.ext import (
 )
 from src.config import TELEGRAM_BOT_TOKEN
 from src.handlers import (
-    cmd_start, cmd_summary, cmd_week, cmd_goals, cmd_setgoals,
+    cmd_start, cmd_menu, cmd_summary, cmd_week, cmd_goals, cmd_setgoals,
     cmd_recovery, cmd_streak, cmd_pb, cmd_deletelast, cmd_weight,
     handle_photo, handle_message, handle_callback,
 )
@@ -42,6 +42,7 @@ def main():
     )
 
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("menu", cmd_menu))
     app.add_handler(CommandHandler("summary", cmd_summary))
     app.add_handler(CommandHandler("week", cmd_week))
     app.add_handler(CommandHandler("goals", cmd_goals))
