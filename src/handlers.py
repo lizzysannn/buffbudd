@@ -73,6 +73,14 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "What's wrong with it? Just tell me — e.g. `they're half-boiled eggs not fried, and add peanut butter on the bread`"
         )
 
+    elif data == "food_delete":
+        sheets.delete_last_food_row()
+        ctx.user_data.pop("last_food", None)
+        totals = sheets.get_today_totals()
+        await query.edit_message_text(
+            f"Deleted. Today: {totals['calories']} / {DEFAULT_CALORIES} cal · Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g"
+        )
+
     elif data == "exercise_confirm":
         ex = ctx.user_data.pop("pending_exercise", None)
         if ex:
@@ -518,6 +526,7 @@ def _food_confirm_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("✅ Correct", callback_data="food_correct"),
         InlineKeyboardButton("🔧 Fix this", callback_data="food_fix"),
+        InlineKeyboardButton("🗑️ Delete", callback_data="food_delete"),
     ]])
 
 
@@ -676,6 +685,16 @@ async def cmd_streak(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return await _deny(update)
     streak = sheets.get_sleep_streak()
     await update.message.reply_text(f"Sleep streak: *{streak} nights* of 7h+", parse_mode="Markdown")
+
+
+async def cmd_deletelast(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _is_authorised(update):
+        return await _deny(update)
+    sheets.delete_last_food_row()
+    totals = sheets.get_today_totals()
+    await update.message.reply_text(
+        f"Last food entry deleted.\nToday: {totals['calories']} / {DEFAULT_CALORIES} cal · Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g"
+    )
 
 
 async def cmd_pb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):

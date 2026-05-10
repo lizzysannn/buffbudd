@@ -9,7 +9,7 @@ from telegram.ext import (
 from src.config import TELEGRAM_BOT_TOKEN
 from src.handlers import (
     cmd_start, cmd_summary, cmd_week, cmd_goals, cmd_setgoals,
-    cmd_recovery, cmd_streak, cmd_pb,
+    cmd_recovery, cmd_streak, cmd_pb, cmd_deletelast,
     handle_photo, handle_message, handle_callback,
 )
 from src.scheduler import build_scheduler
@@ -49,6 +49,7 @@ def main():
     app.add_handler(CommandHandler("recovery", cmd_recovery))
     app.add_handler(CommandHandler("streak", cmd_streak))
     app.add_handler(CommandHandler("pb", cmd_pb))
+    app.add_handler(CommandHandler("deletelast", cmd_deletelast))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(handle_callback))
