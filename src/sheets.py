@@ -246,6 +246,14 @@ def log_weekly_summary(data: dict):
         data.get("avg_sleep", ""),
         data.get("goal_score", ""),
         data.get("notes", ""),
+        # Body / weight columns (H–N)
+        data.get("weight_start", ""),
+        data.get("weight_end", ""),
+        data.get("weight_change", ""),
+        data.get("bf_start", ""),
+        data.get("bf_end", ""),
+        data.get("skeletal_muscle", ""),
+        data.get("top_feel_tags", ""),
     ])
 
 
@@ -274,6 +282,18 @@ def get_prev_week_gym() -> list[dict]:
     """Return gym rows for the previous Mon–Sun week."""
     from datetime import timedelta
     ws = _sheet(SHEET_GYM)
+    rows = ws.get_all_records()
+    today = date.today()
+    this_mon = today - timedelta(days=today.weekday())
+    prev_mon = _norm_date((this_mon - timedelta(days=7)).isoformat())
+    prev_sun = _norm_date((this_mon - timedelta(days=1)).isoformat())
+    return [r for r in rows if prev_mon <= _norm_date(r.get("Date", "")) <= prev_sun]
+
+
+def get_prev_week_body() -> list[dict]:
+    """Return body log rows for the previous Mon–Sun week."""
+    from datetime import timedelta
+    ws = _sheet(SHEET_BODY)
     rows = ws.get_all_records()
     today = date.today()
     this_mon = today - timedelta(days=today.weekday())
@@ -370,6 +390,15 @@ def get_body_trend(days: int = 7) -> list[dict]:
     rows = ws.get_all_records()
     cutoff = _norm_date((date.today() - timedelta(days=days)).isoformat())
     return [r for r in rows if _norm_date(r.get("Date", "")) >= cutoff]
+
+
+def get_body_by_date(date_str: str) -> dict | None:
+    """Return body log row for a specific date, or None."""
+    ws = _sheet(SHEET_BODY)
+    rows = ws.get_all_records()
+    target = _norm_date(date_str)
+    matches = [r for r in rows if _norm_date(r.get("Date", "")) == target]
+    return matches[-1] if matches else None
 
 
 # ── Google Docs ───────────────────────────────────────────────────────────────

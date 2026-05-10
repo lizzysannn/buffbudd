@@ -99,6 +99,7 @@ async def _weekly_report(bot: Bot):
     food  = sheets.get_prev_week_food()
     gym   = sheets.get_prev_week_gym()
     sleep = sheets.get_prev_week_sleep()
+    body  = sheets.get_prev_week_body()
 
     # ── Nutrition ─────────────────────────────────────────────────────────────
     days_with_food = len({r.get("Date") for r in food}) or 1
@@ -118,6 +119,30 @@ async def _weekly_report(bot: Bot):
     sleep_hours = [float(r.get("Hours", 0)) for r in sleep if r.get("Hours")]
     avg_sleep = sum(sleep_hours) / len(sleep_hours) if sleep_hours else 0
     nights_7h = sum(1 for h in sleep_hours if h >= 7)
+
+    # ── Body / Weight ─────────────────────────────────────────────────────────
+    weight_rows = [r for r in body if r.get("Weight (kg)")]
+    weight_start = float(weight_rows[0]["Weight (kg)"]) if weight_rows else None
+    weight_end   = float(weight_rows[-1]["Weight (kg)"]) if weight_rows else None
+    weight_change = round(weight_end - weight_start, 1) if (weight_start and weight_end) else None
+
+    bf_rows = [r for r in body if r.get("Body Fat (%)")]
+    bf_start = float(bf_rows[0]["Body Fat (%)"]) if bf_rows else None
+    bf_end   = float(bf_rows[-1]["Body Fat (%)"]) if bf_rows else None
+
+    sm_rows = [r for r in body if r.get("Skeletal Muscle (kg)")]
+    sm_end = float(sm_rows[-1]["Skeletal Muscle (kg)"]) if sm_rows else None
+
+    # Body feel tags frequency
+    all_tags = []
+    for r in body:
+        tags_str = str(r.get("Body Feel", "")).strip()
+        if tags_str:
+            all_tags.extend([t.strip() for t in tags_str.split(",") if t.strip()])
+    tag_counts: dict[str, int] = {}
+    for t in all_tags:
+        tag_counts[t] = tag_counts.get(t, 0) + 1
+    top_tags = sorted(tag_counts.items(), key=lambda x: -x[1])[:3]
 
     # ── Goal score via Claude ─────────────────────────────────────────────────
     week_data = (
@@ -143,6 +168,14 @@ async def _weekly_report(bot: Bot):
         "avg_sleep": f"{avg_sleep:.1f}",
         "goal_score": "",
         "notes": score_report[:200],
+        # Body columns
+        "weight_start": f"{weight_start}" if weight_start else "",
+        "weight_end": f"{weight_end}" if weight_end else "",
+        "weight_change": f"{weight_change:+.1f}" if weight_change is not None else "",
+        "bf_start": f"{bf_start}" if bf_start else "",
+        "bf_end": f"{bf_end}" if bf_end else "",
+        "skeletal_muscle": f"{sm_end}" if sm_end else "",
+        "top_feel_tags": ", ".join(f"{t} ({c}x)" for t, c in top_tags) if top_tags else "",
     })
 
     # ── Send message ──────────────────────────────────────────────────────────
@@ -151,13 +184,33 @@ async def _weekly_report(bot: Bot):
     sugar_status = "✅" if avg_sugar <= SUGAR_TARGET else f"⚠️ avg {avg_sugar:.1f}g"
     gym_status  = "✅" if gym_hit else f"❌ {gym_days}/{DEFAULT_GYM_SESSIONS_WEEK}"
 
+    # Build weight line
+    if weight_start and weight_end and len(weight_rows) > 1:
+        sign = "+" if weight_change >= 0 else ""
+        weight_line = f"⚖️ Weight: {weight_start}kg → {weight_end}kg ({sign}{weight_change}kg)"
+    elif weight_end:
+        weight_line = f"⚖️ Weight: {weight_end}kg"
+    else:
+        weight_line = "⚖️ Weight: not logged this week"
+
+    if bf_end:
+        bf_change = f" · BF: {bf_start}% → {bf_end}%" if bf_start and bf_start != bf_end else f" · BF: {bf_end}%"
+        weight_line += bf_change
+    if sm_end:
+        weight_line += f" · Muscle: {sm_end}kg"
+
+    feel_line = ""
+    if top_tags:
+        feel_line = "\n🏷 Body feel: " + " · ".join(f"{t} ({c}x)" for t, c in top_tags)
+
     msg = (
         f"*Weekly Report — {week_label}*\n\n"
         f"🍱 Calories: {avg_cal:.0f} / {DEFAULT_CALORIES} {cal_status}\n"
         f"💪 Protein: {avg_pro:.0f}g / {DEFAULT_PROTEIN}g {pro_status}\n"
         f"🍬 Sugar: {avg_sugar:.1f}g / {SUGAR_TARGET:.0f}g {sugar_status}\n"
         f"🏋️ Gym: {gym_days} / {DEFAULT_GYM_SESSIONS_WEEK} sessions {gym_status}\n"
-        f"😴 Sleep: avg {avg_sleep:.1f}h · {nights_7h}/7 nights ≥7h\n\n"
+        f"😴 Sleep: avg {avg_sleep:.1f}h · {nights_7h}/7 nights ≥7h\n"
+        f"{weight_line}{feel_line}\n\n"
         f"*Goal Review*\n_{score_report}_"
     )
     await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="Markdown")

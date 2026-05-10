@@ -1062,6 +1062,7 @@ async def _fetch_and_show_stats(log_date: str, reply):
         food_rows = sheets.get_food_by_date(log_date)
         gym_rows  = sheets.get_gym_by_date(log_date)
         sleep_row = sheets.get_sleep_by_date(log_date)
+        body_row  = sheets.get_body_by_date(log_date)
 
         d_obj = date.fromisoformat(log_date)
         date_fmt = d_obj.strftime("%a, %d %b")
@@ -1087,9 +1088,20 @@ async def _fetch_and_show_stats(log_date: str, reply):
             SUGAR_TARGET = 25.0
 
             lines.append("🍱 *Food*")
+            # Compact per-meal breakdown
+            current_meal = None
+            for r in food_rows:
+                meal = str(r.get("Meal Type", "")).capitalize()
+                meal_name = str(r.get("Meal", ""))
+                cal = int(r.get("Calories", 0))
+                pro = float(r.get("Protein", 0))
+                if meal != current_meal:
+                    current_meal = meal
+                    lines.append(f"_{meal}_")
+                lines.append(f"  • {meal_name} — {cal}cal · {pro:.0f}g P")
             lines.append(
-                f"Calories: {total_cal} / {DEFAULT_CALORIES} "
-                f"({'↓' + str(abs(int(cal_gap))) if cal_gap > 0 else '↑' + str(abs(int(cal_gap)))})"
+                f"*Total: {total_cal} / {DEFAULT_CALORIES} cal "
+                f"({'↓' + str(abs(int(cal_gap))) if cal_gap > 0 else '↑' + str(abs(int(cal_gap)))})*"
             )
             lines.append(
                 f"Protein: {total_pro:.0f}g / {DEFAULT_PROTEIN}g "
@@ -1126,6 +1138,21 @@ async def _fetch_and_show_stats(log_date: str, reply):
             lines.append("😴 *Sleep* — not logged")
 
         lines.append("")
+
+        # ── Body check-in ─────────────────────────────────────────────────────
+        if body_row and (body_row.get("Weight (kg)") or body_row.get("Body Feel")):
+            w = body_row.get("Weight (kg)", "")
+            bf = body_row.get("Body Fat (%)", "")
+            tags = body_row.get("Body Feel", "")
+            parts = []
+            if w:
+                parts.append(f"{w}kg")
+            if bf:
+                parts.append(f"BF {bf}%")
+            if tags:
+                parts.append(f"_{tags}_")
+            lines.append("⚖️ *Body* — " + " · ".join(parts))
+            lines.append("")
 
         # ── Gym week progress ─────────────────────────────────────────────────
         today = date.today()
