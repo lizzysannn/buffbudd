@@ -109,9 +109,11 @@ def analyse_food_text(text: str, meal_history: list[str] | None = None) -> dict:
         '  "meal_type": "breakfast|lunch|dinner|snack|supper|NONE",\n'
         '  "note": "one-line Buff Buddy style response",\n'
         '  "items": [\n'
-        '    {"name": "item name", "calories": 0, "protein": 0.0, "carbs": 0.0, "fats": 0.0}\n'
+        '    {"name": "item name", "calories": 0, "protein": 0.0, "carbs": 0.0, "fats": 0.0, "sugar": 0.0}\n'
         "  ]\n"
         "}\n\n"
+        "sugar = total sugars in grams (natural + added). Whole foods like eggs/meat/veg = near 0. "
+        "Fruit, dairy, bread = natural sugar. Sweets, sauces, flavoured drinks = higher.\n\n"
         f"Meal: {text}"
     )
     return _parse_itemised_response(_call(prompt, max_tokens=600))
@@ -135,6 +137,7 @@ def _parse_itemised_response(text: str) -> dict:
     total_pro = sum(float(i.get("protein", 0)) for i in items)
     total_carb = sum(float(i.get("carbs", 0)) for i in items)
     total_fat = sum(float(i.get("fats", 0)) for i in items)
+    total_sugar = sum(float(i.get("sugar", 0)) for i in items)
     description = ", ".join(i["name"] for i in items if i.get("name"))
 
     return {
@@ -144,6 +147,7 @@ def _parse_itemised_response(text: str) -> dict:
         "protein": round(total_pro, 1),
         "carbs": round(total_carb, 1),
         "fats": round(total_fat, 1),
+        "sugar": round(total_sugar, 1),
         "confidence": "medium",
         "note": data.get("note", ""),
         "items": items,

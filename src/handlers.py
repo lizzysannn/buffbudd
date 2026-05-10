@@ -54,15 +54,19 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pending = ctx.user_data.pop("pending_food", None)
         if pending:
             m, mt = pending["macros"], pending["meal_type"]
-            sheets.log_food(m["description"], m["calories"], m["protein"], m["carbs"], m["fats"], mt, pending.get("log_date", ""))
+            sheets.log_food(m["description"], m["calories"], m["protein"], m["carbs"], m["fats"], mt, pending.get("log_date", ""), m.get("sugar", 0.0))
             totals = sheets.get_today_totals()
+            SUGAR_TARGET = 25.0
             msg = (
                 f"✅ Logged.\n"
                 f"Today: {totals['calories']} / {DEFAULT_CALORIES} cal · "
-                f"Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g"
+                f"Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g · "
+                f"Sugar {totals['sugar']:.0f} / {SUGAR_TARGET:.0f}g"
             )
             if totals["protein"] < DEFAULT_PROTEIN * 0.5 and totals["meals"] >= 2:
                 msg += "\nProtein's low, Liz. Prioritise it next meal."
+            if totals["sugar"] > SUGAR_TARGET:
+                msg += f"\nSugar's over {SUGAR_TARGET:.0f}g today — watch the sweet stuff."
             await query.edit_message_text(msg)
 
     elif data == "fix_food":
@@ -600,11 +604,16 @@ def _build_food_preview(macros: dict, resolved_type: str) -> str:
             pro = float(item.get("protein", 0))
             carb = float(item.get("carbs", 0))
             fat = float(item.get("fats", 0))
-            lines.append(f"• *{item['name']}* — {cal} cal · {pro}g P · {carb}g C · {fat}g F")
+            sugar = float(item.get("sugar", 0))
+            line = f"• *{item['name']}* — {cal} cal · {pro}g P · {carb}g C · {fat}g F"
+            if sugar > 0:
+                line += f" · {sugar}g sugar"
+            lines.append(line)
         lines.append("")
+    sugar_total = macros.get("sugar", 0)
     lines.append(
         f"Total: *{macros['calories']} cal* · {macros['protein']}g protein · "
-        f"{macros['carbs']}g carbs · {macros['fats']}g fat"
+        f"{macros['carbs']}g carbs · {macros['fats']}g fat · {sugar_total}g sugar"
     )
     lines.append("\nCorrect?")
     return "\n".join(lines)
@@ -628,6 +637,7 @@ async def _handle_food_query(text: str, reply):
         total_pro = sum(float(r.get("Protein", 0)) for r in rows)
         total_carbs = sum(float(r.get("Carbs", 0)) for r in rows)
         total_fats = sum(float(r.get("Fats", 0)) for r in rows)
+        total_sugar = sum(float(r.get("Sugar (g)", 0)) for r in rows)
 
         # Meal breakdown grouped by type
         lines = [f"*{log_date} — what you ate:*\n"]
@@ -639,14 +649,17 @@ async def _handle_food_query(text: str, reply):
                 lines.append(f"\n_{meal}_")
             lines.append(f"• {r.get('Meal', '')} — {r.get('Calories', 0)} cal · {r.get('Protein', 0)}g P")
 
-        lines.append(f"\n*Total: {total_cal} cal · {total_pro:.0f}g protein · {total_carbs:.0f}g carbs · {total_fats:.0f}g fat*")
+        lines.append(f"\n*Total: {total_cal} cal · {total_pro:.0f}g protein · {total_carbs:.0f}g carbs · {total_fats:.0f}g fat · {total_sugar:.0f}g sugar*")
 
         # Gap vs targets
+        SUGAR_TARGET = 25.0
         cal_gap = DEFAULT_CALORIES - total_cal
         pro_gap = DEFAULT_PROTEIN - total_pro
+        sugar_gap = SUGAR_TARGET - total_sugar
         lines.append("\n*vs targets:*")
         lines.append(f"Calories: {total_cal} / {DEFAULT_CALORIES} ({'under by ' + str(abs(int(cal_gap))) if cal_gap > 0 else 'over by ' + str(abs(int(cal_gap)))})")
-        lines.append(f"Protein: {total_pro:.0f}g / {DEFAULT_PROTEIN}g ({'under by ' + str(abs(int(pro_gap))) + 'g' if pro_gap > 0 else 'hit ✅' if pro_gap == 0 else 'over by ' + str(abs(int(pro_gap))) + 'g'})")
+        lines.append(f"Protein: {total_pro:.0f}g / {DEFAULT_PROTEIN}g ({'under by ' + str(abs(int(pro_gap))) + 'g' if pro_gap > 0 else 'over by ' + str(abs(int(pro_gap))) + 'g'})")
+        lines.append(f"Sugar: {total_sugar:.0f}g / {SUGAR_TARGET:.0f}g ({'under ✅' if sugar_gap >= 0 else 'over by ' + str(abs(int(sugar_gap))) + 'g ⚠️'})")
 
         # Weekly gym progress
         today = date.today()

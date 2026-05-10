@@ -63,7 +63,7 @@ def infer_meal_type_from_time() -> str:
         return "supper"
 
 
-def log_food(meal_desc: str, calories: int, protein: float, carbs: float, fats: float, meal_type: str = "", log_date: str = ""):
+def log_food(meal_desc: str, calories: int, protein: float, carbs: float, fats: float, meal_type: str = "", log_date: str = "", sugar: float = 0.0):
     ws = _sheet(SHEET_FOOD)
     now = datetime.now()
     row_date = log_date or now.strftime("%Y-%m-%d")
@@ -77,6 +77,7 @@ def log_food(meal_desc: str, calories: int, protein: float, carbs: float, fats: 
         protein,
         carbs,
         fats,
+        sugar,
     ])
 
 
@@ -127,6 +128,7 @@ def get_today_totals() -> dict:
         "protein": sum(float(r.get("Protein", 0)) for r in rows),
         "carbs": sum(float(r.get("Carbs", 0)) for r in rows),
         "fats": sum(float(r.get("Fats", 0)) for r in rows),
+        "sugar": sum(float(r.get("Sugar (g)", 0)) for r in rows),
         "meals": len(rows),
     }
 
