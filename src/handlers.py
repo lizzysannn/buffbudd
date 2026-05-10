@@ -1365,6 +1365,8 @@ async def _handle_done_for_day(reply):
         # ── Food: creative story + 2 stat lines ───────────────────────────────
         total_cal   = sum(int(r.get("Calories", 0)) for r in food_rows)
         total_pro   = sum(float(r.get("Protein", 0)) for r in food_rows)
+        total_carbs = sum(float(r.get("Carbs", 0)) for r in food_rows)
+        total_fats  = sum(float(r.get("Fats", 0)) for r in food_rows)
         total_sugar = sum(sheets._get_sugar(r) for r in food_rows)
         cal_gap  = DEFAULT_CALORIES - total_cal
         pro_gap  = DEFAULT_PROTEIN - total_pro
@@ -1378,9 +1380,10 @@ async def _handle_done_for_day(reply):
                 story = "A full day of fuel in the books."
             lines.append(f"_{story}_")
             cal_str = f"{total_cal} / {DEFAULT_CALORIES} cal · {'✅' if cal_gap >= 0 else f'↑{abs(int(cal_gap))} over'}"
-            pro_str = f"{total_pro:.0f}g protein · {'✅' if pro_gap <= 0 else f'↓{abs(int(pro_gap))}g short'}"
-            sug_str = f"{total_sugar:.0f}g sugar · {'✅' if total_sugar <= SUGAR_TARGET else f'⚠️ +{total_sugar - SUGAR_TARGET:.0f}g'}"
-            lines.append(f"{cal_str} · {pro_str} · {sug_str}")
+            pro_str = f"{total_pro:.0f}g P · {'✅' if pro_gap <= 0 else f'↓{abs(int(pro_gap))}g short'}"
+            macro_str = f"C {total_carbs:.0f}g · F {total_fats:.0f}g · Sugar {total_sugar:.0f}g {'✅' if total_sugar <= SUGAR_TARGET else f'⚠️ +{total_sugar - SUGAR_TARGET:.0f}g'}"
+            lines.append(f"{cal_str} · {pro_str}")
+            lines.append(macro_str)
         else:
             lines.append("_Nothing logged today._")
         lines.append("")
