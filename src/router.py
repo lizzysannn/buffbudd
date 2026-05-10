@@ -15,6 +15,14 @@ _PERIOD_RE = re.compile(
 # Sleep shorthand: two numbers like "7 4" or "7.5 4"
 _SLEEP_RE = re.compile(r"^\s*\d+(\.\d+)?\s+[1-5]\s*$")
 
+# Gym fast-path: "gym", "self train", set names etc — before Claude
+_GYM_RE = re.compile(
+    r"\b(gym|gyming|workout|self[\s-]train(ing)?|hit\s+the\s+gym|going\s+to\s+(the\s+)?gym|"
+    r"train(ing)?\s+today|today('?s)?\s+(gym|workout|training)|"
+    r"wanna\s+gym|gonna\s+gym|going\s+gym)\b",
+    re.IGNORECASE,
+)
+
 # Food query: asking specifically about food/meals logged
 _FOOD_QUERY_RE = re.compile(
     r"\b(what\s+did\s+i\s+eat|what\s+i\s+ate|show\s+me\s+(my\s+)?(food|meals?)|"
@@ -55,6 +63,10 @@ def classify_intent(text: str) -> str:
     # Fast-path: sleep shorthand
     if _SLEEP_RE.match(text.strip()):
         return "recovery"
+
+    # Fast-path: gym trigger
+    if _GYM_RE.search(text):
+        return "gym"
 
     # Fast-path: period trigger
     if _PERIOD_RE.search(text):

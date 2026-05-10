@@ -515,11 +515,20 @@ async def handle_target_muscle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # ── Gym logging ───────────────────────────────────────────────────────────────
 
-async def _show_gym_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def _show_gym_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE, set_name_hint: str = ""):
     """Show the exercise list and set awaiting_gym_results state."""
     try:
         available_sets = sheets.get_available_sets()
-        set_name = available_sets[0] if available_sets else "Self Train"
+        # If user mentioned a set name, try to match it
+        set_name = ""
+        if set_name_hint:
+            hint_lower = set_name_hint.lower()
+            for s in available_sets:
+                if hint_lower in s.lower() or s.lower() in hint_lower:
+                    set_name = s
+                    break
+        if not set_name:
+            set_name = available_sets[0] if available_sets else "Self Train"
         exercises = sheets.get_exercises_by_set(set_name)
         if exercises:
             ctx.user_data["gym_exercises"] = exercises
@@ -818,7 +827,7 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if intent == "meal":
         await _log_meal_text(text, reply, ctx=ctx)
     elif intent == "gym":
-        await _show_gym_list(update, ctx)
+        await _show_gym_list(update, ctx, set_name_hint=text)
     elif intent == "recovery":
         await _log_recovery(text, reply, ctx=ctx)
     elif intent == "emotions":
