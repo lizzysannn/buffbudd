@@ -144,7 +144,7 @@ async def _daily_summary(bot: Bot):
     # ── vs Yesterday (succinct delta) ────────────────────────────────────────
     yest_cal  = sum(int(r.get("Calories", 0)) for r in yest_food)
     yest_pro  = sum(float(r.get("Protein", 0)) for r in yest_food)
-    yest_sug  = sum(float(r.get("Sugar (g)", 0)) for r in yest_food)
+    yest_sug  = sum(sheets._get_sugar(r) for r in yest_food)
     yest_sleep_h = float(yest_sleep.get("Hours", 0)) if yest_sleep else None
     yest_mood    = yest_emotions.get("Mood") if yest_emotions else None
 
@@ -235,7 +235,7 @@ async def _weekly_report(bot: Bot):
     avg_pro   = sum(float(r.get("Protein", 0)) for r in food) / days_with_food
     avg_carb  = sum(float(r.get("Carbs", 0)) for r in food) / days_with_food
     avg_fat   = sum(float(r.get("Fats", 0)) for r in food) / days_with_food
-    avg_sugar = sum(float(r.get("Sugar (g)", 0)) for r in food) / days_with_food
+    avg_sugar = sum(sheets._get_sugar(r) for r in food) / days_with_food
     SUGAR_TARGET = 25.0
 
     # ── Gym + Cardio ──────────────────────────────────────────────────────────

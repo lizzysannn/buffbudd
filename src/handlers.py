@@ -95,7 +95,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pro = float(last.get("Protein", 0))
             carbs = float(last.get("Carbs", 0))
             fats = float(last.get("Fats", 0))
-            sugar = float(last.get("Sugar (g)", 0))
+            sugar = sheets._get_sugar(last)
             meal_type = str(last.get("Meal Type", sheets.infer_meal_type_from_time()))
             # Reuse stored breakdown if available
             breakdown = str(last.get("Breakdown", ""))
@@ -368,7 +368,7 @@ async def _log_meal_text(text: str, reply, ctx=None, meal_type: str = ""):
             pro  = last_entry.get("Protein", 0)
             carb = last_entry.get("Carbs", 0)
             fat  = last_entry.get("Fats", 0)
-            sugar = last_entry.get("Sugar (g)", 0)
+            sugar = sheets._get_sugar(last_entry)
             last_date = last_entry.get("Date", "")
 
             date_note = f"\n📅 *Logging for {log_date}*" if log_date else ""
@@ -1040,7 +1040,7 @@ async def _handle_food_query(text: str, reply):
         total_pro = sum(float(r.get("Protein", 0)) for r in rows)
         total_carbs = sum(float(r.get("Carbs", 0)) for r in rows)
         total_fats = sum(float(r.get("Fats", 0)) for r in rows)
-        total_sugar = sum(float(r.get("Sugar (g)", 0)) for r in rows)
+        total_sugar = sum(sheets._get_sugar(r) for r in rows)
 
         # Meal breakdown grouped by type
         lines = [f"*{log_date} — what you ate:*\n"]
@@ -1149,7 +1149,7 @@ async def _fetch_and_show_stats(log_date: str, reply):
             total_pro   = sum(float(r.get("Protein", 0)) for r in food_rows)
             total_carbs = sum(float(r.get("Carbs", 0)) for r in food_rows)
             total_fats  = sum(float(r.get("Fats", 0)) for r in food_rows)
-            total_sugar = sum(float(r.get("Sugar (g)", 0)) for r in food_rows)
+            total_sugar = sum(sheets._get_sugar(r) for r in food_rows)
 
             cal_gap = DEFAULT_CALORIES - total_cal
             pro_gap = DEFAULT_PROTEIN - total_pro
@@ -1254,7 +1254,7 @@ async def _handle_week_stats(reply):
             avg_pro  = sum(float(r.get("Protein", 0)) for r in food) / max(days_food, 1)
             avg_carb = sum(float(r.get("Carbs", 0)) for r in food) / max(days_food, 1)
             avg_fat  = sum(float(r.get("Fats", 0)) for r in food) / max(days_food, 1)
-            avg_sugar = sum(float(r.get("Sugar (g)", 0)) for r in food) / max(days_food, 1)
+            avg_sugar = sum(sheets._get_sugar(r) for r in food) / max(days_food, 1)
             lines.append(f"🍱 *Food* (avg over {days_food} day{'s' if days_food != 1 else ''})")
             lines.append(f"Calories: {avg_cal:.0f} / {DEFAULT_CALORIES}")
             lines.append(f"Protein: {avg_pro:.0f}g / {DEFAULT_PROTEIN}g")
@@ -1292,10 +1292,14 @@ async def _handle_done_for_day(reply):
         SUGAR_TARGET = 25.0
 
         # ── Pull today's data ─────────────────────────────────────────────────
+        yesterday_str = (today - timedelta(days=1)).isoformat()
         food_rows  = sheets.get_today_food()
         gym_rows   = sheets.get_today_gym()
         sleep_row  = sheets.get_today_sleep()
         body_row   = sheets.get_body_by_date(today_str)
+        yest_food  = sheets.get_food_by_date(yesterday_str)
+        yest_gym   = sheets.get_gym_by_date(yesterday_str)
+        yest_sleep = sheets.get_sleep_by_date(yesterday_str)
 
         date_fmt = today.strftime("%a, %d %b")
         lines = [f"*End of Day — {date_fmt}*\n"]
@@ -1306,7 +1310,7 @@ async def _handle_done_for_day(reply):
             total_pro   = sum(float(r.get("Protein", 0)) for r in food_rows)
             total_carbs = sum(float(r.get("Carbs", 0)) for r in food_rows)
             total_fats  = sum(float(r.get("Fats", 0)) for r in food_rows)
-            total_sugar = sum(float(r.get("Sugar (g)", 0)) for r in food_rows)
+            total_sugar = sum(sheets._get_sugar(r) for r in food_rows)
             cal_gap = DEFAULT_CALORIES - total_cal
             pro_gap = DEFAULT_PROTEIN - total_pro
             lines.append("🍱 *Food*")
@@ -1367,6 +1371,49 @@ async def _handle_done_for_day(reply):
             lines.append("😴 *Sleep* — not logged yet")
 
         lines.append("")
+
+        # ── vs Yesterday ─────────────────────────────────────────────────────
+        if yest_food or yest_sleep or yest_gym:
+            yest_cal = sum(int(r.get("Calories", 0)) for r in yest_food)
+            yest_pro = sum(float(r.get("Protein", 0)) for r in yest_food)
+            yest_sug = sum(sheets._get_sugar(r) for r in yest_food)
+            yest_h   = float(yest_sleep.get("Hours", 0)) if yest_sleep else None
+
+            delta_parts = []
+            if yest_cal:
+                d = total_cal - yest_cal
+                delta_parts.append(f"Cal {yest_cal}→{total_cal} ({'↑' if d>0 else '↓'}{abs(d)})")
+            if yest_pro:
+                d = total_pro - yest_pro
+                delta_parts.append(f"Protein {yest_pro:.0f}→{total_pro:.0f}g ({'↑' if d>0 else '↓'}{abs(d):.0f}g)")
+            if yest_sug or total_sugar:
+                d = total_sugar - yest_sug
+                delta_parts.append(f"Sugar {yest_sug:.0f}→{total_sugar:.0f}g ({'↑' if d>0 else '↓'}{abs(d):.0f}g)")
+            if yest_h is not None and sleep_row:
+                d = float(sleep_row.get("Hours", 0)) - yest_h
+                delta_parts.append(f"Sleep {yest_h}h→{sleep_row.get('Hours')}h ({'↑' if d>0 else '↓'}{abs(d):.1f}h)")
+            if yest_gym and not gym_rows:
+                delta_parts.append("Gym: active→rest")
+            elif not yest_gym and gym_rows:
+                delta_parts.append("Gym: rest→active 💪")
+
+            # One-liner verdict: what improved, what didn't
+            improvements, regressions = [], []
+            if yest_pro and total_pro > yest_pro: improvements.append("protein up")
+            if yest_pro and total_pro < yest_pro: regressions.append("protein down")
+            if yest_cal and 0 < total_cal <= DEFAULT_CALORIES and (yest_cal > DEFAULT_CALORIES):
+                improvements.append("calories back on track")
+            if yest_sug and total_sugar < yest_sug: improvements.append("less sugar")
+            if yest_sug and total_sugar > yest_sug: regressions.append("more sugar")
+            if yest_h and sleep_row and float(sleep_row.get("Hours", 0)) > yest_h: improvements.append("more sleep")
+
+            lines.append("📊 *vs Yesterday*")
+            lines.append(" · ".join(delta_parts) if delta_parts else "No comparable data")
+            if improvements:
+                lines.append(f"_Better: {', '.join(improvements)}_")
+            if regressions:
+                lines.append(f"_Watch: {', '.join(regressions)}_")
+            lines.append("")
 
         # ── Weekly progress ───────────────────────────────────────────────────
         gym_done    = sheets.get_week_gym_days()
@@ -1448,7 +1495,7 @@ async def _handle_quest_check(reply):
         food_days = len({r.get("Date") for r in food_week}) or 1
         avg_cal  = sum(int(r.get("Calories", 0)) for r in food_week) / food_days
         avg_pro  = sum(float(r.get("Protein", 0)) for r in food_week) / food_days
-        avg_sugar = sum(float(r.get("Sugar (g)", 0)) for r in food_week) / food_days
+        avg_sugar = sum(sheets._get_sugar(r) for r in food_week) / food_days
         SUGAR_TARGET = 25.0
 
         cal_status = "✅" if avg_cal <= DEFAULT_CALORIES else f"⚠️ avg {avg_cal:.0f} (over by {avg_cal - DEFAULT_CALORIES:.0f})"

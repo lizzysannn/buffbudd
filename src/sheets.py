@@ -30,6 +30,17 @@ def _norm_date(d) -> str:
     return str(d).strip()
 
 
+def _norm_row(row: dict) -> dict:
+    """Strip leading/trailing whitespace from all keys in a sheet row."""
+    return {k.strip(): v for k, v in row.items()}
+
+
+def _get_sugar(row: dict) -> float:
+    """Read sugar value robustly — handles 'Sugar (g)' and 'Sugar (g) ' (trailing space)."""
+    r = _norm_row(row)
+    return float(r.get("Sugar (g)", 0) or 0)
+
+
 def _creds():
     # Check both possible env var names for the JSON string
     raw = os.environ.get("GOOGLE_CREDENTIALS_JSON") or os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
@@ -141,7 +152,7 @@ def get_today_totals() -> dict:
         "protein": sum(float(r.get("Protein", 0)) for r in rows),
         "carbs": sum(float(r.get("Carbs", 0)) for r in rows),
         "fats": sum(float(r.get("Fats", 0)) for r in rows),
-        "sugar": sum(float(r.get("Sugar (g)", 0)) for r in rows),
+        "sugar": sum(_get_sugar(r) for r in rows),
         "meals": len(rows),
     }
 
