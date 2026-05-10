@@ -33,14 +33,36 @@ async def _deny(update: Update):
 # ── Intent disambiguation buttons ─────────────────────────────────────────────
 
 async def _ask_intent(update: Update, text: str):
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("🍱 Meal", callback_data="intent_meal"),
-        InlineKeyboardButton("🏋️ Gym", callback_data="intent_gym"),
-    ], [
-        InlineKeyboardButton("😴 Recovery", callback_data="intent_recovery"),
-        InlineKeyboardButton("💬 Emotions", callback_data="intent_emotions"),
-    ]])
-    await update.message.reply_text("What are we logging?", reply_markup=keyboard)
+    keyboard = InlineKeyboardMarkup([
+        # Log section header (fake, via leading label in first button)
+        [InlineKeyboardButton("── LOG ──────────────", callback_data="noop")],
+        [
+            InlineKeyboardButton("🍱 Food",    callback_data="intent_meal"),
+            InlineKeyboardButton("🏋️ Gym",     callback_data="intent_gym"),
+        ],
+        [
+            InlineKeyboardButton("😴 Sleep",   callback_data="intent_recovery"),
+            InlineKeyboardButton("💬 Mood",    callback_data="intent_emotions"),
+        ],
+        [
+            InlineKeyboardButton("⚖️ Body",    callback_data="intent_body"),
+            InlineKeyboardButton("🔴 Period",  callback_data="intent_period"),
+        ],
+        # Stats section
+        [InlineKeyboardButton("── VIEW ─────────────", callback_data="noop")],
+        [
+            InlineKeyboardButton("📊 Today",       callback_data="menu_today"),
+            InlineKeyboardButton("📅 Yesterday",   callback_data="menu_yesterday"),
+        ],
+        [
+            InlineKeyboardButton("📈 This Week",   callback_data="menu_week"),
+            InlineKeyboardButton("🎯 Quest Check", callback_data="menu_quest"),
+        ],
+        [
+            InlineKeyboardButton("✅ Done for Day", callback_data="menu_done_day"),
+        ],
+    ])
+    await update.message.reply_text("What's up?", reply_markup=keyboard)
 
 
 # ── Callback query handler ────────────────────────────────────────────────────
@@ -316,6 +338,12 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         elif action == "quest":
             await _handle_quest_check(reply)
 
+        elif action == "done_day":
+            await _handle_done_for_day(reply)
+
+    elif data == "noop":
+        pass  # section header buttons — do nothing
+
     elif data.startswith("intent_"):
         intent = data.replace("intent_", "")
         messages = ctx.user_data.pop("pending_messages", [])
@@ -330,6 +358,9 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await _log_recovery(combined, reply, ctx=ctx)
         elif intent == "emotions":
             await _log_emotions(combined, reply, ctx=ctx)
+        elif intent == "body":
+            await reply("Weight and/or how your body feels today (e.g. 52.3kg, feeling strong).")
+            ctx.user_data["awaiting_menu_log"] = "body"
         elif intent == "period":
             await _log_period(combined, reply, bot=ctx.bot, chat_id=TELEGRAM_CHAT_ID)
 

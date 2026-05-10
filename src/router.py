@@ -47,8 +47,9 @@ _STATS_RE = re.compile(
 # Done for the day: end-of-day wrap-up
 _DONE_RE = re.compile(
     r"\b(done\s+for\s+(the\s+)?day|i'?m\s+done\s+for\s+(the\s+)?day|that'?s?\s+(it\s+)?for\s+today|"
-    r"done\s+for\s+today|calling\s+it\s+(a\s+day)?|wrapping\s+up(\s+today)?|end\s+of\s+(my\s+)?day|"
-    r"day'?s?\s+done|finished\s+for\s+(the\s+)?day)\b",
+    r"done\s+for\s+today|calling\s+it\s+(a\s+day)?|wrapping\s+up(\s+today)?|"
+    r"end\s+of\s+(my\s+)?day|end\s+(the\s+)?day|ready\s+to\s+end(\s+the\s+day)?|"
+    r"day'?s?\s+done|finished\s+for\s+(the\s+)?day|that'?s?\s+a\s+wrap)\b",
     re.IGNORECASE,
 )
 
