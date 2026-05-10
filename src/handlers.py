@@ -49,37 +49,85 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
 
-    if data.startswith("mealtype_"):
-        meal_type = data.replace("mealtype_", "")
-        macros = ctx.user_data.pop("pending_macros", None)
-        if macros:
-            sheets.log_food(macros["description"], macros["calories"], macros["protein"], macros["carbs"], macros["fats"], meal_type)
+    # ── Food confirm/fix/cancel ───────────────────────────────────────────────
+    if data == "confirm_food":
+        pending = ctx.user_data.pop("pending_food", None)
+        if pending:
+            m, mt = pending["macros"], pending["meal_type"]
+            sheets.log_food(m["description"], m["calories"], m["protein"], m["carbs"], m["fats"], mt)
             totals = sheets.get_today_totals()
             msg = (
-                f"*{macros['description']}* · _{meal_type.capitalize()}_\n"
-                f"Fuelled. {macros['calories']} cal · {macros['protein']}g protein · {macros['carbs']}g carbs · {macros['fats']}g fat\n\n"
-                f"Today: {totals['calories']} / {DEFAULT_CALORIES} cal · Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g"
+                f"✅ Logged.\n"
+                f"Today: {totals['calories']} / {DEFAULT_CALORIES} cal · "
+                f"Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g"
             )
-            await query.edit_message_text(msg, parse_mode="Markdown")
+            if totals["protein"] < DEFAULT_PROTEIN * 0.5 and totals["meals"] >= 2:
+                msg += "\nProtein's low, Liz. Prioritise it next meal."
+            await query.edit_message_text(msg)
 
-    elif data == "food_correct":
+    elif data == "fix_food":
         await query.edit_message_reply_markup(reply_markup=None)
-        await query.answer("Logged ✅")
+        ctx.user_data["awaiting_fix"] = "food"
+        await query.message.reply_text("What's wrong? Tell me and I'll re-analyse.")
 
-    elif data == "food_fix":
+    elif data == "cancel_food":
+        ctx.user_data.pop("pending_food", None)
+        await query.edit_message_text("Cancelled — nothing logged.")
+
+    # ── Sleep confirm/fix/cancel ──────────────────────────────────────────────
+    elif data == "confirm_sleep":
+        pending = ctx.user_data.pop("pending_sleep", None)
+        if pending:
+            sheets.log_sleep(pending["hours"], pending["quality"])
+            streak = sheets.get_sleep_streak()
+            buddy_reply = claude_ai.recovery_reply(pending["hours"], pending["quality"], streak)
+            await query.edit_message_text(f"✅ Logged.\n{buddy_reply}")
+
+    elif data == "fix_sleep":
         await query.edit_message_reply_markup(reply_markup=None)
-        ctx.user_data["awaiting_food_correction"] = True
-        await query.message.reply_text(
-            "What's wrong with it? Just tell me — e.g. `they're half-boiled eggs not fried, and add peanut butter on the bread`"
-        )
+        ctx.user_data["awaiting_fix"] = "sleep"
+        await query.message.reply_text("What's wrong with the sleep data? Correct me.")
 
-    elif data == "food_delete":
-        sheets.delete_last_food_row()
-        ctx.user_data.pop("last_food", None)
-        totals = sheets.get_today_totals()
-        await query.edit_message_text(
-            f"Deleted. Today: {totals['calories']} / {DEFAULT_CALORIES} cal · Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g"
-        )
+    elif data == "cancel_sleep":
+        ctx.user_data.pop("pending_sleep", None)
+        await query.edit_message_text("Cancelled — nothing logged.")
+
+    # ── Emotions confirm/fix/cancel ───────────────────────────────────────────
+    elif data == "confirm_emotions":
+        pending = ctx.user_data.pop("pending_emotions", None)
+        if pending:
+            sheets.log_emotions(pending["mood"], pending["energy"], pending["notes"])
+            cycle_day, phase = sheets.get_cycle_info()
+            buddy_reply = claude_ai.emotions_reply(pending["mood"], pending["energy"], pending["notes"], cycle_day, phase)
+            await query.edit_message_text(f"✅ Logged.\n{buddy_reply}")
+
+    elif data == "fix_emotions":
+        await query.edit_message_reply_markup(reply_markup=None)
+        ctx.user_data["awaiting_fix"] = "emotions"
+        await query.message.reply_text("What should I change about mood/energy?")
+
+    elif data == "cancel_emotions":
+        ctx.user_data.pop("pending_emotions", None)
+        await query.edit_message_text("Cancelled — nothing logged.")
+
+    # ── Gym confirm/cancel ────────────────────────────────────────────────────
+    elif data == "confirm_gym":
+        pending = ctx.user_data.pop("pending_gym", None)
+        if pending:
+            for r in pending:
+                if not r.get("skipped"):
+                    w = r.get("weight_kg", r.get("weight", 0))
+                    sheets.log_gym(r["exercise"], r["sets"], r["reps"], w, r.get("rpe"), r.get("notes", ""))
+                    if w > 0:
+                        sheets.update_exercise_weight(r["exercise"], w)
+            ctx.user_data.pop("gym_exercises", None)
+            ctx.user_data.pop("gym_set_name", None)
+            await query.edit_message_text("✅ Session logged. Mission complete, Liz.")
+
+    elif data == "cancel_gym":
+        ctx.user_data.pop("pending_gym", None)
+        ctx.user_data.pop("gym_exercises", None)
+        await query.edit_message_text("Cancelled — nothing logged.")
 
     elif data == "exercise_confirm":
         ex = ctx.user_data.pop("pending_exercise", None)
@@ -127,9 +175,9 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         elif intent == "gym":
             await _show_gym_list(update, ctx)
         elif intent == "recovery":
-            await _log_recovery(combined, reply)
+            await _log_recovery(combined, reply, ctx=ctx)
         elif intent == "emotions":
-            await _log_emotions(combined, reply)
+            await _log_emotions(combined, reply, ctx=ctx)
         elif intent == "period":
             await _log_period(combined, reply, bot=ctx.bot, chat_id=TELEGRAM_CHAT_ID)
 
@@ -144,36 +192,16 @@ async def _log_meal_text(text: str, reply, ctx=None, meal_type: str = ""):
         macros = claude_ai.analyse_food_text(text)
         if macros["calories"] == 0 and macros["protein"] == 0:
             await reply("What did you eat exactly? Give me weights if you have them — e.g. `100g chicken, 150g rice, side salad`")
-            if ctx:
-                ctx.user_data["session_intent"] = "meal"
-                ctx.user_data["session_messages"] = []
             return
 
-        # Resolve meal type: explicit arg > Claude extraction > time-of-day
         resolved_type = meal_type or macros.get("meal_type") or sheets.infer_meal_type_from_time()
 
-        # If meal type still unknown after all inference, ask with buttons
-        if not resolved_type and ctx:
-            keyboard = InlineKeyboardMarkup([[
-                InlineKeyboardButton("🌅 Breakfast", callback_data="mealtype_breakfast"),
-                InlineKeyboardButton("☀️ Lunch", callback_data="mealtype_lunch"),
-            ], [
-                InlineKeyboardButton("🌙 Dinner", callback_data="mealtype_dinner"),
-                InlineKeyboardButton("🍎 Snack", callback_data="mealtype_snack"),
-                InlineKeyboardButton("🌃 Supper", callback_data="mealtype_supper"),
-            ]])
-            ctx.user_data["pending_macros"] = macros
-            await reply("Which meal is this?", reply_markup=keyboard)
-            return
-
-        sheets.log_food(macros["description"], macros["calories"], macros["protein"], macros["carbs"], macros["fats"], resolved_type)
-        totals = sheets.get_today_totals()
         if ctx:
-            ctx.user_data["last_food"] = {"macros": macros, "meal_type": resolved_type}
-        msg = _build_food_reply(macros, resolved_type, totals)
-        await reply(msg, parse_mode="Markdown", reply_markup=_food_confirm_keyboard())
+            ctx.user_data["pending_food"] = {"macros": macros, "meal_type": resolved_type, "original_text": text}
+
+        msg = _build_food_preview(macros, resolved_type)
+        await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("food"))
     except Exception as e:
-        import traceback
         log.error(traceback.format_exc()); await reply(_safe_error(e, "meal logging"))
 
 
@@ -345,27 +373,25 @@ async def _show_gym_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def _log_gym_session(text: str, ctx, reply):
+    """Parse gym results, store pending, show preview for confirmation."""
     try:
         exercise_list = ctx.user_data.get("gym_exercises", [])
         has_pr = False
         lines = []
+        pending_results = []
 
         if exercise_list:
-            # exercise_list may be dicts (from catalogue) or strings (legacy)
             ex_names = [
                 e.get("Exercise Name", e) if isinstance(e, dict) else e
                 for e in exercise_list
             ]
             results = claude_ai.parse_session_results(ex_names, text)
             for r in results:
+                pending_results.append(r)
                 if r.get("skipped"):
                     lines.append(f"{r['number']}. {r['exercise']} — skipped")
                     continue
                 w = r["weight_kg"]
-                sheets.log_gym(r["exercise"], r["sets"], r["reps"], w, r.get("rpe"), r.get("notes", ""))
-                # Update catalogue with latest weight
-                if w > 0:
-                    sheets.update_exercise_weight(r["exercise"], w)
                 last = sheets.get_last_session(r["exercise"])
                 entry = f"{r['number']}. {r['exercise']} — {w}kg {r['sets']}x{r['reps']}"
                 if r.get("rpe"):
@@ -380,9 +406,7 @@ async def _log_gym_session(text: str, ctx, reply):
                 lines.append(entry)
         else:
             parsed = claude_ai.parse_gym_entry(text)
-            sheets.log_gym(parsed["exercise"], parsed["sets"], parsed["reps"], parsed["weight"], parsed["rpe"], parsed["notes"])
-            if parsed["weight"] > 0:
-                sheets.update_exercise_weight(parsed["exercise"], parsed["weight"])
+            pending_results.append({**parsed, "weight_kg": parsed["weight"], "skipped": False})
             last = sheets.get_last_session(parsed["exercise"])
             pb = sheets.get_pb(parsed["exercise"])
             entry = f"{parsed['exercise']} — {parsed['weight']}kg {parsed['sets']}x{parsed['reps']}"
@@ -393,47 +417,46 @@ async def _log_gym_session(text: str, ctx, reply):
                 has_pr = True
             lines.append(entry)
 
+        ctx.user_data["pending_gym"] = pending_results
         buddy_reply = claude_ai.gym_session_reply(lines, has_pr)
         session_summary = "\n".join(lines)
-        await reply(f"{session_summary}\n\n{buddy_reply}", parse_mode="Markdown")
+        await reply(
+            f"{session_summary}\n\n{buddy_reply}",
+            parse_mode="Markdown",
+            reply_markup=_gym_confirm_keyboard(),
+        )
     except Exception as e:
-        import traceback
-        log.error(traceback.format_exc()); await reply(_safe_error(e, "meal logging"))
+        log.error(traceback.format_exc()); await reply(_safe_error(e, "gym logging"))
 
 
 # ── Recovery logging ──────────────────────────────────────────────────────────
 
-async def _log_recovery(text: str, reply):
+async def _log_recovery(text: str, reply, ctx=None):
     try:
-        # Shorthand: two numbers like "7.5 4" → hours + quality
-        if re.match(r"^\s*\d+(\.\d+)?\s+[1-5]\s*$", text.strip()):
-            parts = text.strip().split()
-            hours, quality = float(parts[0]), int(parts[1])
-        else:
-            # Natural language — let Claude calculate actual sleep duration
-            parsed = claude_ai.parse_sleep(text)
-            hours, quality = parsed["hours"], parsed["quality"]
-        quality = max(1, min(5, quality))
-        sheets.log_sleep(hours, quality)
-        streak = sheets.get_sleep_streak()
-        buddy_reply = claude_ai.recovery_reply(hours, quality, streak)
-        await reply(buddy_reply)
+        parsed = claude_ai.parse_sleep(text)
+        hours, quality = parsed["hours"], max(1, min(5, parsed["quality"]))
+        if ctx:
+            ctx.user_data["pending_sleep"] = {"hours": hours, "quality": quality}
+        quality_label = {1: "terrible", 2: "poor", 3: "ok", 4: "good", 5: "great"}.get(quality, str(quality))
+        msg = f"*Sleep parsed:* {hours}h · Quality {quality}/5 ({quality_label})\n_{parsed.get('notes', '')}_\n\nCorrect?"
+        await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("sleep"))
     except Exception as e:
         log.error(traceback.format_exc()); await reply(_safe_error(e, "logging"))
 
 
 # ── Emotions logging ──────────────────────────────────────────────────────────
 
-async def _log_emotions(text: str, reply):
+async def _log_emotions(text: str, reply, ctx=None):
     try:
         parsed = claude_ai.parse_emotions(text)
-        mood, energy, notes = parsed["mood"], parsed["energy"], parsed["notes"]
-        sheets.log_emotions(mood, energy, notes)
-        cycle_day, phase = sheets.get_cycle_info()
-        buddy_reply = claude_ai.emotions_reply(mood, energy, notes, cycle_day, phase)
-        await reply(buddy_reply)
+        if ctx:
+            ctx.user_data["pending_emotions"] = parsed
+        msg = (
+            f"*Mood:* {parsed['mood']}/10 · *Energy:* {parsed['energy']}/10\n"
+            f"_{parsed['notes']}_\n\nCorrect?"
+        )
+        await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("emotions"))
     except Exception as e:
-        import traceback
         log.error(traceback.format_exc()); await reply(_safe_error(e, "logging"))
 
 
@@ -464,23 +487,34 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = (update.message.text or "").strip()
     reply = update.message.reply_text
 
-    # Food correction flow
-    if ctx.user_data.get("awaiting_food_correction"):
-        ctx.user_data["awaiting_food_correction"] = False
-        last = ctx.user_data.get("last_food", {})
-        original = last.get("macros", {})
-        await reply("Re-analysing with your correction...")
+    # Fix flow — user is correcting a pending entry before it's logged
+    if ctx.user_data.get("awaiting_fix"):
+        fix_type = ctx.user_data.pop("awaiting_fix")
         try:
-            corrected = claude_ai.analyse_food_text(
-                f"Original meal: {original.get('description', '')}. Correction: {text}"
-            )
-            resolved_type = corrected.get("meal_type") or last.get("meal_type") or sheets.infer_meal_type_from_time()
-            sheets.delete_last_food_row()
-            sheets.log_food(corrected["description"], corrected["calories"], corrected["protein"], corrected["carbs"], corrected["fats"], resolved_type)
-            totals = sheets.get_today_totals()
-            ctx.user_data["last_food"] = {"macros": corrected, "meal_type": resolved_type}
-            msg = "Fixed. " + _build_food_reply(corrected, resolved_type, totals)
-            await reply(msg, parse_mode="Markdown", reply_markup=_food_confirm_keyboard())
+            if fix_type == "food":
+                original_desc = ctx.user_data.get("pending_food", {}).get("macros", {}).get("description", "")
+                original_mt = ctx.user_data.get("pending_food", {}).get("meal_type", "")
+                corrected = claude_ai.analyse_food_text(
+                    f"Original meal: {original_desc}. Correction: {text}"
+                )
+                resolved_type = corrected.get("meal_type") or original_mt or sheets.infer_meal_type_from_time()
+                ctx.user_data["pending_food"] = {"macros": corrected, "meal_type": resolved_type}
+                msg = _build_food_preview(corrected, resolved_type)
+                await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("food"))
+
+            elif fix_type == "sleep":
+                parsed = claude_ai.parse_sleep(text)
+                hours, quality = parsed["hours"], max(1, min(5, parsed["quality"]))
+                ctx.user_data["pending_sleep"] = {"hours": hours, "quality": quality}
+                quality_label = {1: "terrible", 2: "poor", 3: "ok", 4: "good", 5: "great"}.get(quality, str(quality))
+                msg = f"*Updated:* {hours}h · Quality {quality}/5 ({quality_label})\nCorrect?"
+                await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("sleep"))
+
+            elif fix_type == "emotions":
+                parsed = claude_ai.parse_emotions(text)
+                ctx.user_data["pending_emotions"] = parsed
+                msg = f"*Updated:* Mood {parsed['mood']}/10 · Energy {parsed['energy']}/10\n_{parsed['notes']}_\nCorrect?"
+                await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("emotions"))
         except Exception as e:
             log.error(traceback.format_exc())
             await reply(_safe_error(e, "correction"))
@@ -503,9 +537,9 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif intent == "gym":
         await _show_gym_list(update, ctx)
     elif intent == "recovery":
-        await _log_recovery(text, reply)
+        await _log_recovery(text, reply, ctx=ctx)
     elif intent == "emotions":
-        await _log_emotions(text, reply)
+        await _log_emotions(text, reply, ctx=ctx)
     elif intent == "period":
         await _log_period(text, reply, bot=ctx.bot, chat_id=TELEGRAM_CHAT_ID)
     elif intent == "add_exercise":
@@ -519,20 +553,26 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data["pending_messages"] = [text]
 
 
-# ── Food confirm/fix buttons ──────────────────────────────────────────────────
+# ── Confirm keyboard (pre-log) ────────────────────────────────────────────────
 
-def _food_confirm_keyboard() -> InlineKeyboardMarkup:
+def _confirm_keyboard(entry_type: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("✅ Correct", callback_data="food_correct"),
-        InlineKeyboardButton("🔧 Fix this", callback_data="food_fix"),
-        InlineKeyboardButton("🗑️ Delete", callback_data="food_delete"),
+        InlineKeyboardButton("✅ Log it", callback_data=f"confirm_{entry_type}"),
+        InlineKeyboardButton("🔧 Fix this", callback_data=f"fix_{entry_type}"),
+        InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{entry_type}"),
     ]])
 
 
-def _build_food_reply(macros: dict, resolved_type: str, totals: dict) -> str:
-    lines = [f"*{resolved_type.capitalize()}* · _{macros['note']}_\n"]
+def _gym_confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Log it", callback_data="confirm_gym"),
+        InlineKeyboardButton("❌ Cancel", callback_data="cancel_gym"),
+    ]])
 
-    # Per-item breakdown
+
+def _build_food_preview(macros: dict, resolved_type: str) -> str:
+    """Show meal breakdown before logging — no today totals yet."""
+    lines = [f"*{resolved_type.capitalize()}* · _{macros.get('note', '')}_\n"]
     items = macros.get("items", [])
     if items:
         for item in items:
@@ -540,22 +580,13 @@ def _build_food_reply(macros: dict, resolved_type: str, totals: dict) -> str:
             pro = float(item.get("protein", 0))
             carb = float(item.get("carbs", 0))
             fat = float(item.get("fats", 0))
-            lines.append(
-                f"• *{item['name']}* — {cal} cal · {pro}g P · {carb}g C · {fat}g F"
-            )
+            lines.append(f"• *{item['name']}* — {cal} cal · {pro}g P · {carb}g C · {fat}g F")
         lines.append("")
-
-    # Totals
     lines.append(
         f"Total: *{macros['calories']} cal* · {macros['protein']}g protein · "
         f"{macros['carbs']}g carbs · {macros['fats']}g fat"
     )
-    lines.append(
-        f"Today: {totals['calories']} / {DEFAULT_CALORIES} cal · "
-        f"Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g"
-    )
-    if totals["protein"] < DEFAULT_PROTEIN * 0.5 and totals["meals"] >= 2:
-        lines.append("\nProtein's low, Liz. Prioritise it next meal.")
+    lines.append("\nCorrect?")
     return "\n".join(lines)
 
 
@@ -577,14 +608,9 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         macros = claude_ai.analyse_food_photo(image_bytes, caption_hint=caption)
 
         resolved_type = macros.get("meal_type") or sheets.infer_meal_type_from_time()
-        sheets.log_food(macros["description"], macros["calories"], macros["protein"], macros["carbs"], macros["fats"], resolved_type)
-        totals = sheets.get_today_totals()
-
-        # Store last logged macros for correction flow
-        ctx.user_data["last_food"] = {"macros": macros, "meal_type": resolved_type}
-
-        msg = _build_food_reply(macros, resolved_type, totals)
-        await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=_food_confirm_keyboard())
+        ctx.user_data["pending_food"] = {"macros": macros, "meal_type": resolved_type}
+        msg = _build_food_preview(macros, resolved_type)
+        await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("food"))
     except Exception as e:
         log.error(traceback.format_exc())
         await update.message.reply_text(_safe_error(e, "photo analysis"))
