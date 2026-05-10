@@ -24,10 +24,19 @@ _FOOD_QUERY_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Body check-in: weight + body feel tags
+_BODY_RE = re.compile(
+    r"(\b\d+\.?\d*\s*kg\b"                              # weight in kg
+    r"|\b(lethargic|bloated|sore|energised|brain\s+fog)\b"  # body-specific tags
+    r"|\b(morning\s+weight|weighed\s+(in|myself)|body\s+(check|scan|feel))\b"
+    r"|\bfeeling\s+(strong|lethargic|sore|bloated|groggy)\b)",
+    re.IGNORECASE,
+)
+
 
 def classify_intent(text: str) -> str:
-    """Returns: gym | meal | recovery | emotions | period |
-                add_exercise | create_set | target_muscle | unknown
+    """Returns: gym | meal | recovery | emotions | period | body_check |
+                add_exercise | create_set | target_muscle | food_query | unknown
 
     Uses cheap regex first, then Claude for ambiguous cases.
     """
@@ -43,6 +52,10 @@ def classify_intent(text: str) -> str:
     if _FOOD_QUERY_RE.search(text):
         return "food_query"
 
+    # Fast-path: body check-in (weight / body-feel tags)
+    if _BODY_RE.search(text):
+        return "body_check"
+
     # Claude classification
     prompt = (
         "Classify this Telegram message from a fitness tracking user into exactly one intent.\n\n"
@@ -50,15 +63,16 @@ def classify_intent(text: str) -> str:
         "- gym: logging a workout, exercises, sets, reps, weights, or saying they went to the gym\n"
         "- meal: describing food eaten, asking to log a meal, food photos\n"
         "- recovery: sleep hours, sleep quality, rest, fatigue, recovery\n"
-        "- emotions: mood, feelings, stress, mental state, energy levels, how they feel\n"
+        "- emotions: mood, feelings, stress, mental state, energy levels, how they feel emotionally\n"
         "- period: period started, menstrual cycle related\n"
+        "- body_check: morning weight (kg), body feel (lethargic/strong/sore/bloated/stressed), daily body check-in\n"
         "- add_exercise: adding a new exercise to the catalogue (e.g. 'add Romanian Deadlift')\n"
         "- create_set: creating a new workout set (e.g. 'create Push Day with Bench, OHP')\n"
         "- target_muscle: user wants to hit a specific muscle group (e.g. 'I want to hit chest', 'what should I do for legs')\n"
         "- food_query: asking to see/review food logged on a past or specific day (e.g. 'what did I eat yesterday', 'show me yesterday's food', 'what was my lunch last Monday')\n"
         "- unknown: anything else\n\n"
         f"Message: {text}\n\n"
-        "Reply with exactly one word from: gym, meal, recovery, emotions, period, add_exercise, create_set, target_muscle, food_query, unknown"
+        "Reply with exactly one word from: gym, meal, recovery, emotions, period, body_check, add_exercise, create_set, target_muscle, food_query, unknown"
     )
     response = _client.messages.create(
         model=CLAUDE_MODEL,
@@ -66,5 +80,6 @@ def classify_intent(text: str) -> str:
         messages=[{"role": "user", "content": prompt}],
     )
     intent = response.content[0].text.strip().lower()
-    valid = {"gym", "meal", "recovery", "emotions", "period", "add_exercise", "create_set", "target_muscle", "food_query", "unknown"}
+    valid = {"gym", "meal", "recovery", "emotions", "period", "body_check",
+             "add_exercise", "create_set", "target_muscle", "food_query", "unknown"}
     return intent if intent in valid else "unknown"

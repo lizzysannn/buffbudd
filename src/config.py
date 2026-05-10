@@ -42,5 +42,9 @@ SHEET_EMOTIONS = "Emotions Log"
 SHEET_ACTIVITY = "Activity Log"
 SHEET_CYCLE = "Cycle Log"
 SHEET_CATALOGUE = "Exercise Catalogue"
+SHEET_BODY = "Body Log"
+
+# Body metrics
+HEIGHT_M = 1.64  # metres — used for BMI calculation
 
 CLAUDE_MODEL = "claude-sonnet-4-20250514"

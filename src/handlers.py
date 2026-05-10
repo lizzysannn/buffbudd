@@ -17,7 +17,7 @@ from telegram.ext import ContextTypes, CallbackQueryHandler
 from src import sheets, claude_ai
 from src.config import (
     DEFAULT_CALORIES, DEFAULT_PROTEIN, DEFAULT_CARBS, DEFAULT_FATS,
-    DEFAULT_GYM_SESSIONS_WEEK, TELEGRAM_CHAT_ID,
+    DEFAULT_GYM_SESSIONS_WEEK, TELEGRAM_CHAT_ID, HEIGHT_M,
 )
 
 
@@ -142,6 +142,29 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     elif data == "cancel_emotions":
         ctx.user_data.pop("pending_emotions", None)
+        await query.edit_message_text("Cancelled — nothing logged.")
+
+    # ── Body check-in confirm/fix/cancel ─────────────────────────────────────
+    elif data == "confirm_body":
+        pending = ctx.user_data.pop("pending_body", None)
+        if pending:
+            sheets.log_body(
+                pending["weight_kg"], pending["body_fat_pct"],
+                pending["tags"], pending["notes"],
+            )
+            buddy_reply = claude_ai.body_checkin_reply(
+                pending["weight_kg"], pending["bmi"],
+                pending["tags"], pending["notes"],
+            )
+            await query.edit_message_text(f"✅ Logged.\n{buddy_reply}")
+
+    elif data == "fix_body":
+        await query.edit_message_reply_markup(reply_markup=None)
+        ctx.user_data["awaiting_fix"] = "body"
+        await query.message.reply_text("What should I fix? Tell me again.")
+
+    elif data == "cancel_body":
+        ctx.user_data.pop("pending_body", None)
         await query.edit_message_text("Cancelled — nothing logged.")
 
     # ── Gym confirm/cancel ────────────────────────────────────────────────────
@@ -519,6 +542,61 @@ async def _log_emotions(text: str, reply, ctx=None):
         log.error(traceback.format_exc()); await reply(_safe_error(e, "logging"))
 
 
+# ── Body check-in ─────────────────────────────────────────────────────────────
+
+async def _log_body_checkin(text: str, reply, ctx=None):
+    try:
+        parsed = claude_ai.parse_body_checkin(text)
+        weight = parsed["weight_kg"]
+        bf_pct = parsed["body_fat_pct"]
+        tags = parsed["tags"]
+        notes = parsed["notes"]
+
+        # Calc BMI and lean mass
+        bmi = round(weight / (HEIGHT_M ** 2), 1) if weight else None
+        lean_mass = round(weight * (1 - bf_pct / 100), 1) if (weight and bf_pct) else None
+
+        if ctx:
+            ctx.user_data["pending_body"] = {
+                "weight_kg": weight, "body_fat_pct": bf_pct,
+                "tags": tags, "notes": notes,
+                "bmi": bmi, "lean_mass": lean_mass,
+            }
+
+        # Build preview
+        lines = ["*Body Check-in*\n"]
+        if weight:
+            lines.append(f"⚖️ Weight: *{weight} kg*")
+            lines.append(f"📊 BMI: *{bmi}* ({_bmi_category(bmi)})")
+        if bf_pct:
+            lines.append(f"🔬 Body fat: *{bf_pct}%*")
+        if lean_mass:
+            lines.append(f"💪 Lean mass: *{lean_mass} kg*")
+        if tags:
+            lines.append(f"🏷 Feel: {' · '.join(tags)}")
+        if notes:
+            lines.append(f"📝 _{notes}_")
+        if not weight and not tags:
+            await reply("What did you want to log? Tell me your weight (e.g. 52.3kg) and/or how you feel.")
+            return
+
+        lines.append("\nCorrect?")
+        await reply("\n".join(lines), parse_mode="Markdown", reply_markup=_confirm_keyboard("body"))
+    except Exception as e:
+        log.error(traceback.format_exc()); await reply(_safe_error(e, "body check-in"))
+
+
+def _bmi_category(bmi: float) -> str:
+    if bmi < 18.5:
+        return "underweight"
+    elif bmi < 25.0:
+        return "healthy"
+    elif bmi < 30.0:
+        return "overweight"
+    else:
+        return "obese"
+
+
 # ── Period logging ────────────────────────────────────────────────────────────
 
 async def _log_period(text: str, reply, bot=None, chat_id=None):
@@ -581,6 +659,9 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 date_note = f"\n📅 *Logging for {log_date}*" if log_date else ""
                 msg = f"*Updated:* Mood {parsed['mood']}/10 · Energy {parsed['energy']}/10\n_{parsed['notes']}_{date_note}\nCorrect?"
                 await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("emotions"))
+
+            elif fix_type == "body":
+                await _log_body_checkin(text, reply, ctx=ctx)
         except Exception as e:
             log.error(traceback.format_exc())
             await reply(_safe_error(e, "correction"))
@@ -610,6 +691,8 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _log_period(text, reply, bot=ctx.bot, chat_id=TELEGRAM_CHAT_ID)
     elif intent == "food_query":
         await _handle_food_query(text, reply)
+    elif intent == "body_check":
+        await _log_body_checkin(text, reply, ctx=ctx)
     elif intent == "add_exercise":
         await handle_add_exercise(update, ctx)
     elif intent == "create_set":
@@ -783,7 +866,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "• Tell me how you slept → logged\n"
         "• Tell me how you feel → logged\n"
         "• Say you got your period → cycle tracker starts\n\n"
-        "Commands: /summary /week /goals /recovery /streak /pb",
+        "Commands: /summary /week /weight /goals /recovery /streak /pb",
         parse_mode="Markdown",
     )
 
@@ -889,6 +972,77 @@ async def cmd_deletelast(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"Last food entry deleted.\nToday: {totals['calories']} / {DEFAULT_CALORIES} cal · Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g"
     )
+
+
+async def cmd_weight(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _is_authorised(update):
+        return await _deny(update)
+    rows = sheets.get_body_trend(days=7)
+    weight_rows = [r for r in rows if r.get("Weight (kg)")]
+    if not weight_rows:
+        await update.message.reply_text("No weight logged in the last 7 days.")
+        return
+
+    weights = [float(r["Weight (kg)"]) for r in weight_rows]
+    bmis = [float(r["BMI"]) for r in weight_rows if r.get("BMI")]
+    avg_w = round(sum(weights) / len(weights), 1)
+    min_w = min(weights)
+    max_w = max(weights)
+    avg_bmi = round(sum(bmis) / len(bmis), 1) if bmis else None
+
+    # Last body fat / lean mass entry
+    bf_rows = [r for r in rows if r.get("Body Fat (%)")]
+    bf_line = ""
+    if bf_rows:
+        last_bf = float(bf_rows[-1]["Body Fat (%)"])
+        last_lm = bf_rows[-1].get("Lean Mass (kg)", "")
+        bf_line = f"\nBody fat: {last_bf}% · Lean mass: {last_lm} kg" if last_lm else f"\nBody fat: {last_bf}%"
+
+    # Feel tag frequency this week
+    all_tags: list[str] = []
+    for r in rows:
+        tags_str = str(r.get("Body Feel", "")).strip()
+        if tags_str:
+            all_tags.extend([t.strip() for t in tags_str.split(",")])
+    tag_counts: dict[str, int] = {}
+    for t in all_tags:
+        if t:
+            tag_counts[t] = tag_counts.get(t, 0) + 1
+    top_tags = sorted(tag_counts.items(), key=lambda x: -x[1])[:3]
+    tags_line = "\nTop feel tags: " + " · ".join(f"{t} ({c}x)" for t, c in top_tags) if top_tags else ""
+
+    trend_lines = []
+    for r in weight_rows[-7:]:
+        w = r.get("Weight (kg)", "")
+        d = r.get("Date", "")
+        tags = str(r.get("Body Feel", "")).strip()
+        line = f"  {d}: {w} kg"
+        if tags:
+            line += f" — {tags}"
+        trend_lines.append(line)
+
+    msg = (
+        f"*7-day Weight Trend*\n"
+        f"Avg: {avg_w} kg · Min: {min_w} kg · Max: {max_w} kg\n"
+        f"BMI: {avg_bmi} ({_bmi_category(avg_bmi)})" if avg_bmi else f"*7-day Weight Trend*\n"
+        f"Avg: {avg_w} kg · Min: {min_w} kg · Max: {max_w} kg"
+    )
+    if avg_bmi:
+        msg = (
+            f"*7-day Weight Trend*\n"
+            f"Avg: {avg_w} kg · Min: {min_w} · Max: {max_w}\n"
+            f"BMI: avg {avg_bmi} ({_bmi_category(avg_bmi)})"
+            f"{bf_line}{tags_line}\n\n"
+            + "\n".join(trend_lines)
+        )
+    else:
+        msg = (
+            f"*7-day Weight Trend*\n"
+            f"Avg: {avg_w} kg · Min: {min_w} · Max: {max_w}"
+            f"{bf_line}{tags_line}\n\n"
+            + "\n".join(trend_lines)
+        )
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
 
 async def cmd_pb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):

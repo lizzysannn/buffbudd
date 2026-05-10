@@ -357,6 +357,53 @@ def emotions_reply(mood: int, energy: int, notes: str, cycle_day: int | None, ph
     return _call(prompt, max_tokens=150)
 
 
+# ── Body check-in ─────────────────────────────────────────────────────────────
+
+BODY_TAGS = [
+    "lethargic", "strong", "tired", "stressed", "not enough sleep",
+    "bloated", "sore", "energised", "brain fog", "good mood",
+]
+
+def parse_body_checkin(text: str) -> dict:
+    """Extract weight, body fat %, feel tags, and notes from a check-in message."""
+    tags_list = ", ".join(BODY_TAGS)
+    prompt = (
+        f"Parse this body check-in message. Reply as JSON only:\n"
+        f'{{"weight_kg": <float or null>, "body_fat_pct": <float or null>, '
+        f'"tags": ["<tag1>", ...], "notes": "<any extra detail or empty>"}}\n\n'
+        f"Available tags (pick all that apply, exact spelling): {tags_list}\n\n"
+        "Rules:\n"
+        "- Extract weight in kg (e.g. '52.3kg' → 52.3). null if not mentioned.\n"
+        "- Extract body fat % if mentioned (e.g. '22%', '22% body fat'). null if not.\n"
+        "- tags: match to available tags. 'groggy' → lethargic+not enough sleep. 'stiff' → sore.\n"
+        "- notes: anything else they said that doesn't fit a tag.\n\n"
+        f"Message: {text}"
+    )
+    raw = _call(prompt, max_tokens=150)
+    start, end = raw.find("{"), raw.rfind("}") + 1
+    try:
+        data = json.loads(raw[start:end])
+        return {
+            "weight_kg": float(data["weight_kg"]) if data.get("weight_kg") else None,
+            "body_fat_pct": float(data["body_fat_pct"]) if data.get("body_fat_pct") else None,
+            "tags": [t for t in (data.get("tags") or []) if t in BODY_TAGS],
+            "notes": data.get("notes", ""),
+        }
+    except Exception:
+        return {"weight_kg": None, "body_fat_pct": None, "tags": [], "notes": text[:100]}
+
+
+def body_checkin_reply(weight_kg: float | None, bmi: float | None, tags: list, notes: str) -> str:
+    bmi_str = f"BMI {bmi}" if bmi else "no weight logged"
+    tags_str = ", ".join(tags) if tags else "no tags"
+    prompt = (
+        f"Body check-in: {bmi_str}. Feel: {tags_str}. Notes: {notes or 'none'}.\n\n"
+        "Give a Buff Buddy reply. Max 2 lines. Calm, read-the-room tone. "
+        "If she feels strong → brief acknowledgement. If lethargic/stressed → steady, no toxic positivity."
+    )
+    return _call(prompt, max_tokens=100)
+
+
 # ── Coaching ──────────────────────────────────────────────────────────────────
 
 def generate_coaching_note(context: str, coach_nutrition: str, coach_training: str) -> str:

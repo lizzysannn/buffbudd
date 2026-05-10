@@ -10,6 +10,7 @@ from src.config import (
     COACH_NUTRITION_DOC_ID, COACH_TRAINING_DOC_ID, WEEKLY_GOALS_DOC_ID,
     SHEET_FOOD, SHEET_GYM, SHEET_SLEEP, SHEET_SUMMARY,
     SHEET_EMOTIONS, SHEET_ACTIVITY, SHEET_CYCLE, SHEET_CATALOGUE,
+    SHEET_BODY, HEIGHT_M,
 )
 
 SCOPES = [
@@ -255,6 +256,52 @@ def get_week_gym() -> list[dict]:
     today = date.today()
     week_start = _norm_date((today - timedelta(days=today.weekday())).isoformat())
     return [r for r in rows if _norm_date(r.get("Date", "")) >= week_start]
+
+
+# ── Body Log ──────────────────────────────────────────────────────────────────
+
+def log_body(weight_kg: float | None, body_fat_pct: float | None, tags: list[str], notes: str = ""):
+    """Log a body check-in. Weight and body fat are optional."""
+    ws = _sheet(SHEET_BODY)
+    now = datetime.now()
+    cycle_day, phase = get_cycle_info()
+
+    bmi = round(weight_kg / (HEIGHT_M ** 2), 1) if weight_kg else ""
+    lean_mass = ""
+    if weight_kg and body_fat_pct:
+        lean_mass = round(weight_kg * (1 - body_fat_pct / 100), 1)
+
+    ws.append_row([
+        now.strftime("%Y-%m-%d"),
+        now.strftime("%H:%M"),
+        weight_kg if weight_kg else "",
+        bmi,
+        body_fat_pct if body_fat_pct else "",
+        lean_mass,
+        ", ".join(tags) if tags else "",
+        notes,
+        cycle_day or "",
+        phase or "",
+    ])
+
+
+def get_week_body() -> list[dict]:
+    """Return body log rows for the current week (Mon–Sun)."""
+    from datetime import timedelta
+    ws = _sheet(SHEET_BODY)
+    rows = ws.get_all_records()
+    today = date.today()
+    week_start = _norm_date((today - timedelta(days=today.weekday())).isoformat())
+    return [r for r in rows if _norm_date(r.get("Date", "")) >= week_start]
+
+
+def get_body_trend(days: int = 7) -> list[dict]:
+    """Return last N days of body log rows."""
+    from datetime import timedelta
+    ws = _sheet(SHEET_BODY)
+    rows = ws.get_all_records()
+    cutoff = _norm_date((date.today() - timedelta(days=days)).isoformat())
+    return [r for r in rows if _norm_date(r.get("Date", "")) >= cutoff]
 
 
 # ── Google Docs ───────────────────────────────────────────────────────────────
