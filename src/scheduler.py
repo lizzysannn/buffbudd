@@ -110,10 +110,22 @@ async def _weekly_report(bot: Bot):
     avg_sugar = sum(float(r.get("Sugar (g)", 0)) for r in food) / days_with_food
     SUGAR_TARGET = 25.0
 
-    # ── Gym ───────────────────────────────────────────────────────────────────
-    from src.config import DEFAULT_GYM_SESSIONS_WEEK
+    # ── Gym + Cardio ──────────────────────────────────────────────────────────
+    from src.config import DEFAULT_GYM_SESSIONS_WEEK, DEFAULT_CARDIO_SESSIONS_WEEK, DEFAULT_CARDIO_MIN
+    from collections import defaultdict
     gym_days = len({r.get("Date") for r in gym if r.get("Date")})
     gym_hit = gym_days >= DEFAULT_GYM_SESSIONS_WEEK
+
+    # Count cardio sessions ≥ DEFAULT_CARDIO_MIN minutes
+    day_cardio: dict[str, int] = defaultdict(int)
+    for r in gym:
+        if str(r.get("Type", "")).lower() == "cardio":
+            try:
+                day_cardio[r.get("Date", "")] += int(r.get("Duration (min)", 0) or 0)
+            except (ValueError, TypeError):
+                pass
+    cardio_sessions = sum(1 for d in day_cardio.values() if d >= DEFAULT_CARDIO_MIN)
+    cardio_hit = cardio_sessions >= DEFAULT_CARDIO_SESSIONS_WEEK
 
     # ── Sleep ─────────────────────────────────────────────────────────────────
     sleep_hours = [float(r.get("Hours", 0)) for r in sleep if r.get("Hours")]
@@ -179,10 +191,11 @@ async def _weekly_report(bot: Bot):
     })
 
     # ── Send message ──────────────────────────────────────────────────────────
-    cal_status  = "✅" if avg_cal <= DEFAULT_CALORIES else f"⚠️ over by {avg_cal - DEFAULT_CALORIES:.0f}"
-    pro_status  = "✅" if avg_pro >= DEFAULT_PROTEIN else f"❌ avg {avg_pro:.0f}g"
-    sugar_status = "✅" if avg_sugar <= SUGAR_TARGET else f"⚠️ avg {avg_sugar:.1f}g"
-    gym_status  = "✅" if gym_hit else f"❌ {gym_days}/{DEFAULT_GYM_SESSIONS_WEEK}"
+    cal_status     = "✅" if avg_cal <= DEFAULT_CALORIES else f"⚠️ over by {avg_cal - DEFAULT_CALORIES:.0f}"
+    pro_status     = "✅" if avg_pro >= DEFAULT_PROTEIN else f"❌ avg {avg_pro:.0f}g"
+    sugar_status   = "✅" if avg_sugar <= SUGAR_TARGET else f"⚠️ avg {avg_sugar:.1f}g"
+    gym_status     = "✅" if gym_hit else f"❌ {gym_days}/{DEFAULT_GYM_SESSIONS_WEEK}"
+    cardio_status  = "✅" if cardio_hit else f"❌ {cardio_sessions}/{DEFAULT_CARDIO_SESSIONS_WEEK}"
 
     # Build weight line
     if weight_start and weight_end and len(weight_rows) > 1:
@@ -209,6 +222,7 @@ async def _weekly_report(bot: Bot):
         f"💪 Protein: {avg_pro:.0f}g / {DEFAULT_PROTEIN}g {pro_status}\n"
         f"🍬 Sugar: {avg_sugar:.1f}g / {SUGAR_TARGET:.0f}g {sugar_status}\n"
         f"🏋️ Gym: {gym_days} / {DEFAULT_GYM_SESSIONS_WEEK} sessions {gym_status}\n"
+        f"🏃 Cardio: {cardio_sessions} / {DEFAULT_CARDIO_SESSIONS_WEEK} sessions (≥{DEFAULT_CARDIO_MIN}min) {cardio_status}\n"
         f"😴 Sleep: avg {avg_sleep:.1f}h · {nights_7h}/7 nights ≥7h\n"
         f"{weight_line}{feel_line}\n\n"
         f"*Goal Review*\n_{score_report}_"

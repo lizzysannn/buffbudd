@@ -29,6 +29,8 @@ DEFAULT_FATS = 32       # grams
 
 # Weekly gym target (Mon–Sun)
 DEFAULT_GYM_SESSIONS_WEEK = 3
+DEFAULT_CARDIO_SESSIONS_WEEK = 2   # sessions ≥ 30 min
+DEFAULT_CARDIO_MIN = 30            # minimum minutes to count as a cardio session
 
 # Timezone
 TIMEZONE = "Asia/Singapore"

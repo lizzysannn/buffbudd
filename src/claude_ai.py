@@ -236,8 +236,12 @@ def parse_session_results(exercise_list: list, user_input: str) -> list:
         f"Exercise list:\n{exercises_str}\n\n"
         f"User logged:\n{user_input}\n\n"
         "Match input to exercise list. Reply as JSON array only:\n"
-        '[{"number":1,"exercise":"name","weight_kg":0,"sets":0,"reps":0,"rpe":null,"skipped":false,"notes":""}]\n\n'
-        "Rules: match by number or name. If not mentioned set skipped:true. weight_kg=0 for bodyweight."
+        '[{"number":1,"exercise":"name","weight_kg":0,"sets":0,"reps":0,"rpe":null,"skipped":false,"notes":"","type":"strength","duration_min":0}]\n\n'
+        "Rules:\n"
+        "- Match by number or name. If not mentioned set skipped:true. weight_kg=0 for bodyweight.\n"
+        "- For cardio (treadmill, stairmaster, cycling, rowing, elliptical, running, walking, HIIT): set type=cardio, duration_min=total minutes, sets/reps/weight=0.\n"
+        "- For strength: type=strength, duration_min=0.\n"
+        "- Also include any cardio mentioned that is NOT in the exercise list — add it as an extra entry with number=0."
     )
     text = _call(prompt, max_tokens=800)
     start = text.find("[")
@@ -253,6 +257,17 @@ def gym_session_reply(session_lines: list, has_pr: bool) -> str:
         "Give a Buff Buddy reply for this completed gym session. Max 3 lines."
     )
     return _call(prompt, max_tokens=150)
+
+
+def generate_end_of_day_coaching(day_summary: str, week_summary: str) -> str:
+    """Short coaching note for end-of-day: what went well, what to push for rest of week."""
+    prompt = (
+        f"Today's summary:\n{day_summary}\n\n"
+        f"Week so far:\n{week_summary}\n\n"
+        "Give a Buff Buddy end-of-day coaching note. Max 4 lines. "
+        "Call out one win today. Then tell Liz exactly what to prioritise for the remaining days this week — be specific (e.g. hit protein at lunch, squeeze in cardio Wednesday). No fluff."
+    )
+    return _call(prompt, max_tokens=200)
 
 
 # ── Date extraction ───────────────────────────────────────────────────────────

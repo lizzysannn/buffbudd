@@ -148,7 +148,7 @@ def get_today_totals() -> dict:
 
 # ── Gym Log ───────────────────────────────────────────────────────────────────
 
-def log_gym(exercise: str, sets: int, reps: int, weight: float, rpe: float | None, notes: str = "", log_date: str = ""):
+def log_gym(exercise: str, sets: int, reps: int, weight: float, rpe: float | None, notes: str = "", log_date: str = "", exercise_type: str = "strength", duration_min: int = 0):
     ws = _sheet(SHEET_GYM)
     now = datetime.now()
     row_date = log_date or now.strftime("%Y-%m-%d")
@@ -162,6 +162,8 @@ def log_gym(exercise: str, sets: int, reps: int, weight: float, rpe: float | Non
         weight,
         rpe if rpe else "",
         notes,
+        exercise_type,   # col I — "strength" or "cardio"
+        duration_min if duration_min else "",  # col J — minutes (cardio only)
     ])
 
 
@@ -319,6 +321,21 @@ def get_week_gym_days() -> int:
     """Return number of unique gym days this week (Mon–Sun)."""
     rows = get_week_gym()
     return len({_norm_date(r.get("Date", "")) for r in rows if r.get("Date")})
+
+
+def get_week_cardio_sessions(min_minutes: int = 30) -> int:
+    """Return number of cardio sessions ≥ min_minutes this week."""
+    from collections import defaultdict
+    rows = get_week_gym()
+    # Sum cardio duration per day, count days that hit the threshold
+    day_duration: dict[str, int] = defaultdict(int)
+    for r in rows:
+        if str(r.get("Type", "")).lower() == "cardio":
+            try:
+                day_duration[_norm_date(r.get("Date", ""))] += int(r.get("Duration (min)", 0))
+            except (ValueError, TypeError):
+                pass
+    return sum(1 for d in day_duration.values() if d >= min_minutes)
 
 
 def get_week_gym() -> list[dict]:

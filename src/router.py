@@ -44,6 +44,14 @@ _STATS_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Done for the day: end-of-day wrap-up
+_DONE_RE = re.compile(
+    r"\b(done\s+for\s+(the\s+)?day|i'?m\s+done\s+for\s+(the\s+)?day|that'?s?\s+(it\s+)?for\s+today|"
+    r"done\s+for\s+today|calling\s+it\s+(a\s+day)?|wrapping\s+up(\s+today)?|end\s+of\s+(my\s+)?day|"
+    r"day'?s?\s+done|finished\s+for\s+(the\s+)?day)\b",
+    re.IGNORECASE,
+)
+
 # Body check-in: weight + body feel tags
 _BODY_RE = re.compile(
     r"(\b\d+\.?\d*\s*kg\b"                              # weight in kg
@@ -56,10 +64,15 @@ _BODY_RE = re.compile(
 
 def classify_intent(text: str) -> str:
     """Returns: gym | meal | recovery | emotions | period | body_check |
-                add_exercise | create_set | target_muscle | food_query | unknown
+                add_exercise | create_set | target_muscle | food_query |
+                stats_query | done_for_day | unknown
 
     Uses cheap regex first, then Claude for ambiguous cases.
     """
+    # Fast-path: done for the day
+    if _DONE_RE.search(text):
+        return "done_for_day"
+
     # Fast-path: sleep shorthand
     if _SLEEP_RE.match(text.strip()):
         return "recovery"
@@ -110,5 +123,6 @@ def classify_intent(text: str) -> str:
     )
     intent = response.content[0].text.strip().lower()
     valid = {"gym", "meal", "recovery", "emotions", "period", "body_check",
-             "add_exercise", "create_set", "target_muscle", "food_query", "stats_query", "unknown"}
+             "add_exercise", "create_set", "target_muscle", "food_query", "stats_query",
+             "done_for_day", "unknown"}
     return intent if intent in valid else "unknown"
