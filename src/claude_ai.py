@@ -259,15 +259,31 @@ def gym_session_reply(session_lines: list, has_pr: bool) -> str:
     return _call(prompt, max_tokens=150)
 
 
-def generate_end_of_day_coaching(day_summary: str, week_summary: str) -> str:
-    """Short coaching note for end-of-day: what went well, what to push for rest of week."""
+def generate_food_day_story(meals: str, cal: int, target_cal: int, protein: float, target_protein: float) -> str:
+    """One fun creative sentence describing everything Liz ate today."""
     prompt = (
-        f"Today's summary:\n{day_summary}\n\n"
-        f"Week so far:\n{week_summary}\n\n"
-        "Give a Buff Buddy end-of-day coaching note. Max 4 lines. "
-        "Call out one win today. Then tell Liz exactly what to prioritise for the remaining days this week — be specific (e.g. hit protein at lunch, squeeze in cardio Wednesday). No fluff."
+        f"Meals logged today: {meals}\n"
+        f"Calories: {cal}/{target_cal}, Protein: {protein:.0f}g/{target_protein:.0f}g\n\n"
+        "Write ONE fun, creative sentence (max 20 words) describing everything Liz put in her body today. "
+        "Be playful and specific — name the actual foods, give it personality. No emojis. No generic phrases."
     )
-    return _call(prompt, max_tokens=200)
+    return _call(prompt, max_tokens=80)
+
+
+def generate_end_of_day_coaching(day_summary: str, week_summary: str, yesterday_summary: str = "") -> str:
+    """Compact coach push for end-of-day — acknowledge, compare, push."""
+    yesterday_block = f"Yesterday: {yesterday_summary}\n" if yesterday_summary else ""
+    prompt = (
+        f"Today: {day_summary}\n"
+        f"{yesterday_block}"
+        f"Week: {week_summary}\n\n"
+        "Write a Buff Buddy coach message. 3–4 lines max. "
+        "Acknowledge one specific thing from today (win OR gap). "
+        "If yesterday data exists, call out one change (better or worse) in one line. "
+        "End with one sharp, specific action for tomorrow or the remaining days. "
+        "Sound like a real coach — direct, warm, no fluff."
+    )
+    return _call(prompt, max_tokens=220)
 
 
 def generate_daily_summary_note(context: str, missing: list[str], yesterday_context: str = "") -> str:

@@ -1283,179 +1283,112 @@ async def _handle_week_stats(reply):
 # ── Done for the day ─────────────────────────────────────────────────────────
 
 async def _handle_done_for_day(reply):
-    """Full end-of-day wrap: today's log + weekly remaining + coaching note."""
+    """Compact end-of-day wrap."""
     try:
         from datetime import date, timedelta
         today = date.today()
         today_str = today.isoformat()
-        days_left = 7 - today.weekday()   # includes today
+        yesterday_str = (today - timedelta(days=1)).isoformat()
+        days_left = 7 - today.weekday()
         SUGAR_TARGET = 25.0
 
-        # ── Pull today's data ─────────────────────────────────────────────────
-        yesterday_str = (today - timedelta(days=1)).isoformat()
         food_rows  = sheets.get_today_food()
         gym_rows   = sheets.get_today_gym()
         sleep_row  = sheets.get_today_sleep()
-        body_row   = sheets.get_body_by_date(today_str)
         yest_food  = sheets.get_food_by_date(yesterday_str)
-        yest_gym   = sheets.get_gym_by_date(yesterday_str)
         yest_sleep = sheets.get_sleep_by_date(yesterday_str)
+        yest_gym   = sheets.get_gym_by_date(yesterday_str)
 
         date_fmt = today.strftime("%a, %d %b")
         lines = [f"*End of Day — {date_fmt}*\n"]
 
-        # Food
-        if food_rows:
-            total_cal   = sum(int(r.get("Calories", 0)) for r in food_rows)
-            total_pro   = sum(float(r.get("Protein", 0)) for r in food_rows)
-            total_carbs = sum(float(r.get("Carbs", 0)) for r in food_rows)
-            total_fats  = sum(float(r.get("Fats", 0)) for r in food_rows)
-            total_sugar = sum(sheets._get_sugar(r) for r in food_rows)
-            cal_gap = DEFAULT_CALORIES - total_cal
-            pro_gap = DEFAULT_PROTEIN - total_pro
-            lines.append("🍱 *Food*")
-            current_meal = None
-            for r in food_rows:
-                meal = str(r.get("Meal Type", "")).capitalize()
-                if meal != current_meal:
-                    current_meal = meal
-                    lines.append(f"_{meal}_")
-                lines.append(f"  • {r.get('Meal', '')} — {int(r.get('Calories',0))}cal · {float(r.get('Protein',0)):.0f}g P")
-            lines.append(
-                f"*Total: {total_cal} / {DEFAULT_CALORIES} cal* "
-                f"({'↓' + str(abs(int(cal_gap))) if cal_gap > 0 else '✅ over target by ' + str(abs(int(cal_gap)))})"
-            )
-            lines.append(
-                f"Protein: {total_pro:.0f} / {DEFAULT_PROTEIN}g "
-                f"({'↓' + str(abs(int(pro_gap))) + 'g' if pro_gap > 0 else '✅'})"
-            )
-            sugar_str = "✅" if total_sugar <= SUGAR_TARGET else f"⚠️ {total_sugar:.0f}g (over by {total_sugar - SUGAR_TARGET:.0f}g)"
-            lines.append(f"Sugar: {total_sugar:.0f} / {SUGAR_TARGET:.0f}g {sugar_str}")
-        else:
-            lines.append("🍱 *Food* — nothing logged today")
-            total_cal = total_pro = total_carbs = total_fats = total_sugar = 0
+        # ── Food: creative story + 2 stat lines ───────────────────────────────
+        total_cal   = sum(int(r.get("Calories", 0)) for r in food_rows)
+        total_pro   = sum(float(r.get("Protein", 0)) for r in food_rows)
+        total_sugar = sum(sheets._get_sugar(r) for r in food_rows)
+        cal_gap  = DEFAULT_CALORIES - total_cal
+        pro_gap  = DEFAULT_PROTEIN - total_pro
 
+        lines.append("🍱 *Food*")
+        if food_rows:
+            all_meals = ", ".join(str(r.get("Meal", "")) for r in food_rows if r.get("Meal"))
+            try:
+                story = claude_ai.generate_food_day_story(all_meals, total_cal, DEFAULT_CALORIES, total_pro, DEFAULT_PROTEIN)
+            except Exception:
+                story = "A full day of fuel in the books."
+            lines.append(f"_{story}_")
+            cal_str = f"{total_cal} / {DEFAULT_CALORIES} cal · {'✅' if cal_gap >= 0 else f'↑{abs(int(cal_gap))} over'}"
+            pro_str = f"{total_pro:.0f}g protein · {'✅' if pro_gap <= 0 else f'↓{abs(int(pro_gap))}g short'}"
+            sug_str = f"{total_sugar:.0f}g sugar · {'✅' if total_sugar <= SUGAR_TARGET else f'⚠️ +{total_sugar - SUGAR_TARGET:.0f}g'}"
+            lines.append(f"{cal_str} · {pro_str} · {sug_str}")
+        else:
+            lines.append("_Nothing logged today._")
         lines.append("")
 
-        # Gym (split strength vs cardio)
+        # ── Gym: one line ─────────────────────────────────────────────────────
+        lines.append("🏋️ *Gym*")
         if gym_rows:
             strength_rows = [r for r in gym_rows if str(r.get("Type", "strength")).lower() != "cardio"]
             cardio_rows   = [r for r in gym_rows if str(r.get("Type", "")).lower() == "cardio"]
-            exercises = list({str(r.get("Exercise", "")) for r in strength_rows if r.get("Exercise")})
-            gym_parts = []
-            if exercises:
-                gym_parts.append(f"{len(strength_rows)} strength sets")
+            parts = []
+            if strength_rows: parts.append(f"Strength training ✅")
             if cardio_rows:
-                total_cardio_min = sum(int(r.get("Duration (min)", 0) or 0) for r in cardio_rows)
-                gym_parts.append(f"{total_cardio_min}min cardio")
-            lines.append(f"🏋️ *Gym* — " + " · ".join(gym_parts) if gym_parts else "🏋️ *Gym* — logged")
-            for ex in exercises:
-                ex_sets = [r for r in strength_rows if str(r.get("Exercise", "")) == ex]
-                w = ex_sets[-1].get("Weight", "")
-                reps = ex_sets[-1].get("Reps", "")
-                lines.append(f"  • {ex} — {w}kg {len(ex_sets)}×{reps}")
-            for r in cardio_rows:
-                dur = r.get("Duration (min)", "")
-                lines.append(f"  • {r.get('Exercise', 'Cardio')} — {dur}min")
+                mins = sum(int(r.get("Duration (min)", 0) or 0) for r in cardio_rows)
+                parts.append(f"{mins}min cardio ✅")
+            lines.append(" · ".join(parts))
         else:
-            lines.append("🏋️ *Gym* — rest day")
-
+            lines.append("Rest day")
         lines.append("")
 
-        # Sleep
+        # ── Sleep: one line ───────────────────────────────────────────────────
+        lines.append("😴 *Sleep*")
         if sleep_row:
             h = float(sleep_row.get("Hours", 0))
-            notes = (sleep_row.get("Notes") or sleep_row.get("Quality") or "").strip()
-            lines.append(f"😴 *Sleep* — {h}h" + (f" · _{notes}_" if notes else ""))
+            label = "High 🟢" if h >= 7 else "Medium 🟡" if h >= 6 else "Low 🔴"
+            lines.append(f"{h}h · {label}")
         else:
-            lines.append("😴 *Sleep* — not logged yet")
-
+            lines.append("Not logged yet")
         lines.append("")
 
-        # ── vs Yesterday ─────────────────────────────────────────────────────
-        if yest_food or yest_sleep or yest_gym:
-            yest_cal = sum(int(r.get("Calories", 0)) for r in yest_food)
-            yest_pro = sum(float(r.get("Protein", 0)) for r in yest_food)
-            yest_sug = sum(sheets._get_sugar(r) for r in yest_food)
-            yest_h   = float(yest_sleep.get("Hours", 0)) if yest_sleep else None
+        # ── vs Yesterday: delta + one-liner ──────────────────────────────────
+        yest_cal = sum(int(r.get("Calories", 0)) for r in yest_food)
+        yest_pro = sum(float(r.get("Protein", 0)) for r in yest_food)
+        yest_sug = sum(sheets._get_sugar(r) for r in yest_food)
+        yest_h   = float(yest_sleep.get("Hours", 0)) if yest_sleep else None
 
-            delta_parts = []
-            if yest_cal:
-                d = total_cal - yest_cal
-                delta_parts.append(f"Cal {yest_cal}→{total_cal} ({'↑' if d>0 else '↓'}{abs(d)})")
-            if yest_pro:
-                d = total_pro - yest_pro
-                delta_parts.append(f"Protein {yest_pro:.0f}→{total_pro:.0f}g ({'↑' if d>0 else '↓'}{abs(d):.0f}g)")
-            if yest_sug or total_sugar:
-                d = total_sugar - yest_sug
-                delta_parts.append(f"Sugar {yest_sug:.0f}→{total_sugar:.0f}g ({'↑' if d>0 else '↓'}{abs(d):.0f}g)")
-            if yest_h is not None and sleep_row:
-                d = float(sleep_row.get("Hours", 0)) - yest_h
-                delta_parts.append(f"Sleep {yest_h}h→{sleep_row.get('Hours')}h ({'↑' if d>0 else '↓'}{abs(d):.1f}h)")
-            if yest_gym and not gym_rows:
-                delta_parts.append("Gym: active→rest")
-            elif not yest_gym and gym_rows:
-                delta_parts.append("Gym: rest→active 💪")
+        if yest_food or yest_sleep:
+            parts = []
+            if yest_cal: parts.append(f"Cal {'↑' if total_cal>yest_cal else '↓'}{abs(total_cal-yest_cal)}")
+            if yest_pro: parts.append(f"P {'↑' if total_pro>yest_pro else '↓'}{abs(total_pro-yest_pro):.0f}g")
+            if yest_sug or total_sugar: parts.append(f"Sugar {'↑' if total_sugar>yest_sug else '↓'}{abs(total_sugar-yest_sug):.0f}g")
+            if yest_h and sleep_row: parts.append(f"Sleep {'↑' if float(sleep_row.get('Hours',0))>yest_h else '↓'}{abs(float(sleep_row.get('Hours',0))-yest_h):.1f}h")
+            if not yest_gym and gym_rows: parts.append("Gym: rest→active 💪")
+            elif yest_gym and not gym_rows: parts.append("Gym: active→rest")
+            lines.append(f"📊 *vs Yesterday* — {' · '.join(parts)}" if parts else "📊 *vs Yesterday* — no comparable data")
+        lines.append("")
 
-            # One-liner verdict: what improved, what didn't
-            improvements, regressions = [], []
-            if yest_pro and total_pro > yest_pro: improvements.append("protein up")
-            if yest_pro and total_pro < yest_pro: regressions.append("protein down")
-            if yest_cal and 0 < total_cal <= DEFAULT_CALORIES and (yest_cal > DEFAULT_CALORIES):
-                improvements.append("calories back on track")
-            if yest_sug and total_sugar < yest_sug: improvements.append("less sugar")
-            if yest_sug and total_sugar > yest_sug: regressions.append("more sugar")
-            if yest_h and sleep_row and float(sleep_row.get("Hours", 0)) > yest_h: improvements.append("more sleep")
-
-            lines.append("📊 *vs Yesterday*")
-            lines.append(" · ".join(delta_parts) if delta_parts else "No comparable data")
-            if improvements:
-                lines.append(f"_Better: {', '.join(improvements)}_")
-            if regressions:
-                lines.append(f"_Watch: {', '.join(regressions)}_")
-            lines.append("")
-
-        # ── Weekly progress ───────────────────────────────────────────────────
+        # ── This week ─────────────────────────────────────────────────────────
         gym_done    = sheets.get_week_gym_days()
         cardio_done = sheets.get_week_cardio_sessions(DEFAULT_CARDIO_MIN)
         gym_needed    = max(0, DEFAULT_GYM_SESSIONS_WEEK - gym_done)
         cardio_needed = max(0, DEFAULT_CARDIO_SESSIONS_WEEK - cardio_done)
-
         food_week = sheets.get_week_food()
-        days_food = len({r.get("Date") for r in food_week}) or 1
-        avg_pro_week = sum(float(r.get("Protein", 0)) for r in food_week) / days_food
+        days_food_w = len({r.get("Date") for r in food_week}) or 1
+        avg_pro_week = sum(float(r.get("Protein", 0)) for r in food_week) / days_food_w
 
-        lines.append("*This week so far*")
-        gym_str = (f"{gym_done} / {DEFAULT_GYM_SESSIONS_WEEK} sessions ✅"
-                   if gym_needed == 0 else
-                   f"{gym_done} / {DEFAULT_GYM_SESSIONS_WEEK} sessions · {gym_needed} more · {days_left}d left")
-        cardio_str = (f"{cardio_done} / {DEFAULT_CARDIO_SESSIONS_WEEK} cardio ✅"
-                      if cardio_needed == 0 else
-                      f"{cardio_done} / {DEFAULT_CARDIO_SESSIONS_WEEK} cardio · {cardio_needed} more · {days_left}d left")
-        pro_str = (f"avg {avg_pro_week:.0f}g protein ✅"
-                   if avg_pro_week >= DEFAULT_PROTEIN else
-                   f"avg {avg_pro_week:.0f}g protein (need {DEFAULT_PROTEIN - avg_pro_week:.0f}g more/day to catch up)")
-        lines.append(f"🏋️ {gym_str}")
-        lines.append(f"🏃 {cardio_str}")
-        lines.append(f"💪 {pro_str}")
+        g = f"{gym_done}/{DEFAULT_GYM_SESSIONS_WEEK} gym {'✅' if gym_needed==0 else f'· {gym_needed} more'}"
+        c = f"{cardio_done}/{DEFAULT_CARDIO_SESSIONS_WEEK} cardio {'✅' if cardio_needed==0 else f'· {cardio_needed} more · {days_left}d left'}"
+        p = f"avg {avg_pro_week:.0f}g protein {'✅' if avg_pro_week>=DEFAULT_PROTEIN else f'· ↓{DEFAULT_PROTEIN-avg_pro_week:.0f}g/day'}"
+        lines.append(f"*This week* — {g} · {c} · {p}\n")
 
-        lines.append("")
-
-        # ── Coaching note ─────────────────────────────────────────────────────
-        day_summary_str = (
-            f"Calories: {total_cal} / {DEFAULT_CALORIES}, Protein: {total_pro:.0f}g / {DEFAULT_PROTEIN}g, "
-            f"Gym: {'yes' if gym_rows else 'rest day'}"
-        )
-        week_summary_str = (
-            f"Gym sessions: {gym_done}/{DEFAULT_GYM_SESSIONS_WEEK}, "
-            f"Cardio sessions: {cardio_done}/{DEFAULT_CARDIO_SESSIONS_WEEK} (≥{DEFAULT_CARDIO_MIN}min), "
-            f"Avg protein: {avg_pro_week:.0f}g/{DEFAULT_PROTEIN}g, "
-            f"Days left this week: {days_left}"
-        )
+        # ── Coach push ────────────────────────────────────────────────────────
+        day_str  = f"Cal {total_cal}/{DEFAULT_CALORIES}, P {total_pro:.0f}g/{DEFAULT_PROTEIN}g, Sugar {total_sugar:.0f}g, Gym: {'yes' if gym_rows else 'rest'}, Sleep: {sleep_row.get('Hours','?') if sleep_row else 'not logged'}"
+        week_str = f"Gym {gym_done}/{DEFAULT_GYM_SESSIONS_WEEK}, Cardio {cardio_done}/{DEFAULT_CARDIO_SESSIONS_WEEK}, avg P {avg_pro_week:.0f}g, {days_left}d left"
+        yest_str = f"Cal {yest_cal}, P {yest_pro:.0f}g, Sugar {yest_sug:.0f}g, Gym: {'yes' if yest_gym else 'rest'}" if (yest_food or yest_gym) else ""
         try:
-            note = claude_ai.generate_end_of_day_coaching(day_summary_str, week_summary_str)
+            note = claude_ai.generate_end_of_day_coaching(day_str, week_str, yest_str)
         except Exception:
-            note = "Day's in the books. Rest up — tomorrow's another shot."
+            note = "Day's done. Rest up and go again tomorrow."
 
         lines.append(f"_{note}_")
         await reply("\n".join(lines), parse_mode="Markdown")
