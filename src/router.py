@@ -15,6 +15,15 @@ _PERIOD_RE = re.compile(
 # Sleep shorthand: two numbers like "7 4" or "7.5 4"
 _SLEEP_RE = re.compile(r"^\s*\d+(\.\d+)?\s+[1-5]\s*$")
 
+# Food query: asking to review past food logs
+_FOOD_QUERY_RE = re.compile(
+    r"\b(what\s+did\s+i\s+eat|what\s+i\s+ate|show\s+me\s+(my\s+)?(food|meals?)|"
+    r"summary\s+for\s+(yesterday|last|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
+    r"(food|meal|eating)\s+summary|what\s+was\s+my\s+(lunch|breakfast|dinner|meal)|"
+    r"tell\s+me\s+(my\s+)?(food|meal|eating|what\s+i\s+ate|summary))\b",
+    re.IGNORECASE,
+)
+
 
 def classify_intent(text: str) -> str:
     """Returns: gym | meal | recovery | emotions | period |
@@ -29,6 +38,10 @@ def classify_intent(text: str) -> str:
     # Fast-path: period trigger
     if _PERIOD_RE.search(text):
         return "period"
+
+    # Fast-path: food query
+    if _FOOD_QUERY_RE.search(text):
+        return "food_query"
 
     # Claude classification
     prompt = (
