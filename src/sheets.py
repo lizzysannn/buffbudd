@@ -64,7 +64,7 @@ def infer_meal_type_from_time() -> str:
         return "supper"
 
 
-def log_food(meal_desc: str, calories: int, protein: float, carbs: float, fats: float, meal_type: str = "", log_date: str = "", sugar: float = 0.0):
+def log_food(meal_desc: str, calories: int, protein: float, carbs: float, fats: float, meal_type: str = "", log_date: str = "", sugar: float = 0.0, breakdown: str = ""):
     ws = _sheet(SHEET_FOOD)
     now = datetime.now()
     row_date = log_date or now.strftime("%Y-%m-%d")
@@ -79,6 +79,7 @@ def log_food(meal_desc: str, calories: int, protein: float, carbs: float, fats: 
         carbs,
         fats,
         sugar,
+        breakdown,   # col J — per-ingredient detail
     ])
 
 

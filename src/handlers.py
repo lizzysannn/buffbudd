@@ -55,20 +55,11 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data.pop("last_meal_entry", None)
         if pending:
             m, mt = pending["macros"], pending["meal_type"]
-            sheets.log_food(m["description"], m["calories"], m["protein"], m["carbs"], m["fats"], mt, pending.get("log_date", ""), m.get("sugar", 0.0))
+            breakdown = _items_to_breakdown_str(m.get("items", []))
+            sheets.log_food(m["description"], m["calories"], m["protein"], m["carbs"], m["fats"], mt, pending.get("log_date", ""), m.get("sugar", 0.0), breakdown)
             totals = sheets.get_today_totals()
-            SUGAR_TARGET = 25.0
-            msg = (
-                f"✅ Logged.\n"
-                f"Today: {totals['calories']} / {DEFAULT_CALORIES} cal · "
-                f"Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g · "
-                f"Sugar {totals['sugar']:.0f} / {SUGAR_TARGET:.0f}g"
-            )
-            if totals["protein"] < DEFAULT_PROTEIN * 0.5 and totals["meals"] >= 2:
-                msg += "\nProtein's low, Liz. Prioritise it next meal."
-            if totals["sugar"] > SUGAR_TARGET:
-                msg += f"\nSugar's over {SUGAR_TARGET:.0f}g today — watch the sweet stuff."
-            await query.edit_message_text(msg)
+            msg = _build_food_logged_msg(m, mt, totals)
+            await query.edit_message_text(msg, parse_mode="Markdown")
 
     elif data == "reanalyse_food":
         # User said meals are different — run full Claude analysis on original text
@@ -105,16 +96,24 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             fats = float(last.get("Fats", 0))
             sugar = float(last.get("Sugar (g)", 0))
             meal_type = str(last.get("Meal Type", sheets.infer_meal_type_from_time()))
-            sheets.log_food(meal_desc, cal, pro, carbs, fats, meal_type, log_date, sugar)
+            # Reuse stored breakdown if available
+            breakdown = str(last.get("Breakdown", ""))
+            sheets.log_food(meal_desc, cal, pro, carbs, fats, meal_type, log_date, sugar, breakdown)
             totals = sheets.get_today_totals()
             SUGAR_TARGET = 25.0
+            cal_left = DEFAULT_CALORIES - totals["calories"]
+            pro_left = DEFAULT_PROTEIN - totals["protein"]
             msg = (
-                f"✅ Logged (same as last time).\n"
-                f"Today: {totals['calories']} / {DEFAULT_CALORIES} cal · "
-                f"Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g · "
-                f"Sugar {totals['sugar']:.0f} / {SUGAR_TARGET:.0f}g"
+                f"✅ *{meal_type.capitalize()} logged* _(same as last time)_\n"
+                f"• {meal_desc} — {cal}cal · {pro:.0f}g P\n\n"
+                f"*Today: {totals['calories']} / {DEFAULT_CALORIES} cal* "
+                f"({'↓' + str(abs(int(cal_left))) if cal_left > 0 else '✅'})\n"
+                f"Protein: {totals['protein']:.0f} / {DEFAULT_PROTEIN}g "
+                f"({'↓' + str(abs(int(pro_left))) + 'g to go' if pro_left > 0 else '✅'})\n"
+                f"Sugar: {totals['sugar']:.0f} / {SUGAR_TARGET:.0f}g "
+                f"{'✅' if totals['sugar'] <= SUGAR_TARGET else '⚠️'}"
             )
-            await query.edit_message_text(msg)
+            await query.edit_message_text(msg, parse_mode="Markdown")
         else:
             await query.edit_message_text("Couldn't find last entry — try logging again.")
 
@@ -927,6 +926,46 @@ def _gym_confirm_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton("✅ Log it", callback_data="confirm_gym"),
         InlineKeyboardButton("❌ Cancel", callback_data="cancel_gym"),
     ]])
+
+
+def _items_to_breakdown_str(items: list) -> str:
+    """Compact single-line string for storing in the Breakdown sheet column."""
+    parts = []
+    for item in items:
+        name = item.get("name", "")
+        cal  = int(item.get("calories", 0))
+        pro  = float(item.get("protein", 0))
+        parts.append(f"{name}: {cal}cal {pro:.0f}gP")
+    return " | ".join(parts)
+
+
+def _build_food_logged_msg(macros: dict, meal_type: str, totals: dict) -> str:
+    """Confirmation message shown after a meal is logged — items + running day totals."""
+    SUGAR_TARGET = 25.0
+    items = macros.get("items", [])
+    lines = [f"✅ *{meal_type.capitalize()} logged*\n"]
+    if items:
+        for item in items:
+            cal  = int(item.get("calories", 0))
+            pro  = float(item.get("protein", 0))
+            lines.append(f"• {item['name']} — {cal}cal · {pro:.0f}g P")
+        lines.append("")
+    cal_left = DEFAULT_CALORIES - totals["calories"]
+    pro_left = DEFAULT_PROTEIN - totals["protein"]
+    lines.append(
+        f"*Today: {totals['calories']} / {DEFAULT_CALORIES} cal* "
+        f"({'↓' + str(abs(int(cal_left))) if cal_left > 0 else '✅'})"
+    )
+    lines.append(
+        f"Protein: {totals['protein']:.0f} / {DEFAULT_PROTEIN}g "
+        f"({'↓' + str(abs(int(pro_left))) + 'g to go' if pro_left > 0 else '✅'})"
+    )
+    sugar = totals.get("sugar", 0)
+    sugar_str = "✅" if sugar <= SUGAR_TARGET else f"⚠️ {sugar:.0f}g (over by {sugar - SUGAR_TARGET:.0f}g)"
+    lines.append(f"Sugar: {sugar:.0f} / {SUGAR_TARGET:.0f}g {sugar_str}")
+    if totals["protein"] < DEFAULT_PROTEIN * 0.5 and totals["meals"] >= 2:
+        lines.append("\nProtein's low, Liz. Prioritise it next meal.")
+    return "\n".join(lines)
 
 
 def _build_food_preview(macros: dict, resolved_type: str) -> str:
