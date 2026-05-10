@@ -18,6 +18,17 @@ SCOPES = [
 ]
 
 
+def _norm_date(d) -> str:
+    """Normalize any date string to YYYY-MM-DD with zero-padded month/day."""
+    try:
+        parts = str(d).strip().split("-")
+        if len(parts) == 3:
+            return f"{parts[0]}-{int(parts[1]):02d}-{int(parts[2]):02d}"
+    except Exception:
+        pass
+    return str(d).strip()
+
+
 def _creds():
     # Check both possible env var names for the JSON string
     raw = os.environ.get("GOOGLE_CREDENTIALS_JSON") or os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
@@ -98,14 +109,15 @@ def get_recent_meal_descriptions(meal_type: str = "", limit: int = 8) -> list[st
 def get_food_by_date(date_str: str) -> list[dict]:
     ws = _sheet(SHEET_FOOD)
     rows = ws.get_all_records()
-    return [r for r in rows if str(r.get("Date", "")) == date_str]
+    target = _norm_date(date_str)
+    return [r for r in rows if _norm_date(r.get("Date", "")) == target]
 
 
 def get_today_food() -> list[dict]:
     ws = _sheet(SHEET_FOOD)
-    today = date.today().strftime("%Y-%m-%d")
+    today = _norm_date(date.today().isoformat())
     rows = ws.get_all_records()
-    return [r for r in rows if str(r.get("Date", "")) == today]
+    return [r for r in rows if _norm_date(r.get("Date", "")) == today]
 
 
 def get_today_totals() -> dict:
@@ -158,9 +170,9 @@ def get_pb(exercise: str) -> dict | None:
 
 def get_today_gym() -> list[dict]:
     ws = _sheet(SHEET_GYM)
-    today = date.today().strftime("%Y-%m-%d")
+    today = _norm_date(date.today().isoformat())
     rows = ws.get_all_records()
-    return [r for r in rows if str(r.get("Date", "")) == today]
+    return [r for r in rows if _norm_date(r.get("Date", "")) == today]
 
 
 # ── Sleep Log ─────────────────────────────────────────────────────────────────
@@ -187,9 +199,9 @@ def get_sleep_streak() -> int:
 
 def get_today_sleep() -> dict | None:
     ws = _sheet(SHEET_SLEEP)
-    today = date.today().strftime("%Y-%m-%d")
+    today = _norm_date(date.today().isoformat())
     rows = ws.get_all_records()
-    matches = [r for r in rows if str(r.get("Date", "")) == today]
+    matches = [r for r in rows if _norm_date(r.get("Date", "")) == today]
     return matches[-1] if matches else None
 
 
@@ -213,11 +225,8 @@ def get_week_food() -> list[dict]:
     ws = _sheet(SHEET_FOOD)
     rows = ws.get_all_records()
     today = date.today()
-    week_start = today - timedelta(days=today.weekday())
-    return [
-        r for r in rows
-        if str(r.get("Date", "")) >= week_start.strftime("%Y-%m-%d")
-    ]
+    week_start = _norm_date((today - timedelta(days=today.weekday())).isoformat())
+    return [r for r in rows if _norm_date(r.get("Date", "")) >= week_start]
 
 
 def get_week_gym() -> list[dict]:
@@ -225,11 +234,8 @@ def get_week_gym() -> list[dict]:
     ws = _sheet(SHEET_GYM)
     rows = ws.get_all_records()
     today = date.today()
-    week_start = today - timedelta(days=today.weekday())
-    return [
-        r for r in rows
-        if str(r.get("Date", "")) >= week_start.strftime("%Y-%m-%d")
-    ]
+    week_start = _norm_date((today - timedelta(days=today.weekday())).isoformat())
+    return [r for r in rows if _norm_date(r.get("Date", "")) >= week_start]
 
 
 # ── Google Docs ───────────────────────────────────────────────────────────────
