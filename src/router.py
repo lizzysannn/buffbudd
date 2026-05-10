@@ -15,12 +15,22 @@ _PERIOD_RE = re.compile(
 # Sleep shorthand: two numbers like "7 4" or "7.5 4"
 _SLEEP_RE = re.compile(r"^\s*\d+(\.\d+)?\s+[1-5]\s*$")
 
-# Food query: asking to review past food logs
+# Food query: asking specifically about food/meals logged
 _FOOD_QUERY_RE = re.compile(
     r"\b(what\s+did\s+i\s+eat|what\s+i\s+ate|show\s+me\s+(my\s+)?(food|meals?)|"
-    r"summary\s+for\s+(yesterday|last|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
-    r"(food|meal|eating)\s+summary|what\s+was\s+my\s+(lunch|breakfast|dinner|meal)|"
-    r"tell\s+me\s+(my\s+)?(food|meal|eating|what\s+i\s+ate|summary))\b",
+    r"(food|meal|eating)\s+summary|what\s+was\s+my\s+(lunch|breakfast|dinner|meal))\b",
+    re.IGNORECASE,
+)
+
+# Stats / summary query: asking for overall daily or weekly stats
+_STATS_RE = re.compile(
+    r"\b(stats|my\s+stats|give\s+me\s+(my\s+)?(stats|summary|overview|recap)|"
+    r"tell\s+me\s+(my\s+)?(stats|summary|overview|progress|results?)|"
+    r"show\s+me\s+(my\s+)?(stats|summary|overview|progress|results?)|"
+    r"how\s+(did\s+i\s+do|am\s+i\s+doing)|"
+    r"(weekly|daily|today'?s?|yesterday'?s?)\s+(summary|stats|recap|overview|results?)|"
+    r"summary\s+for\s+(today|yesterday|this\s+week|last\s+week|"
+    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b",
     re.IGNORECASE,
 )
 
@@ -48,9 +58,13 @@ def classify_intent(text: str) -> str:
     if _PERIOD_RE.search(text):
         return "period"
 
-    # Fast-path: food query
+    # Fast-path: food query (meal-specific)
     if _FOOD_QUERY_RE.search(text):
         return "food_query"
+
+    # Fast-path: general stats / summary query
+    if _STATS_RE.search(text):
+        return "stats_query"
 
     # Fast-path: body check-in (weight / body-feel tags)
     if _BODY_RE.search(text):
@@ -69,10 +83,11 @@ def classify_intent(text: str) -> str:
         "- add_exercise: adding a new exercise to the catalogue (e.g. 'add Romanian Deadlift')\n"
         "- create_set: creating a new workout set (e.g. 'create Push Day with Bench, OHP')\n"
         "- target_muscle: user wants to hit a specific muscle group (e.g. 'I want to hit chest', 'what should I do for legs')\n"
-        "- food_query: asking to see/review food logged on a past or specific day (e.g. 'what did I eat yesterday', 'show me yesterday's food', 'what was my lunch last Monday')\n"
+        "- food_query: asking to see specifically what food/meals were logged (e.g. 'what did I eat yesterday', 'show me my meals')\n"
+        "- stats_query: asking for overall stats, summary, or results for a day or week (e.g. 'tell me my stats for yesterday', 'give me my summary', 'how did I do this week')\n"
         "- unknown: anything else\n\n"
         f"Message: {text}\n\n"
-        "Reply with exactly one word from: gym, meal, recovery, emotions, period, body_check, add_exercise, create_set, target_muscle, food_query, unknown"
+        "Reply with exactly one word from: gym, meal, recovery, emotions, period, body_check, add_exercise, create_set, target_muscle, food_query, stats_query, unknown"
     )
     response = _client.messages.create(
         model=CLAUDE_MODEL,
@@ -81,5 +96,5 @@ def classify_intent(text: str) -> str:
     )
     intent = response.content[0].text.strip().lower()
     valid = {"gym", "meal", "recovery", "emotions", "period", "body_check",
-             "add_exercise", "create_set", "target_muscle", "food_query", "unknown"}
+             "add_exercise", "create_set", "target_muscle", "food_query", "stats_query", "unknown"}
     return intent if intent in valid else "unknown"

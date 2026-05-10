@@ -189,6 +189,21 @@ def get_today_gym() -> list[dict]:
     return [r for r in rows if _norm_date(r.get("Date", "")) == today]
 
 
+def get_gym_by_date(date_str: str) -> list[dict]:
+    ws = _sheet(SHEET_GYM)
+    rows = ws.get_all_records()
+    target = _norm_date(date_str)
+    return [r for r in rows if _norm_date(r.get("Date", "")) == target]
+
+
+def get_sleep_by_date(date_str: str) -> dict | None:
+    ws = _sheet(SHEET_SLEEP)
+    rows = ws.get_all_records()
+    target = _norm_date(date_str)
+    matches = [r for r in rows if _norm_date(r.get("Date", "")) == target]
+    return matches[-1] if matches else None
+
+
 # ── Sleep Log ─────────────────────────────────────────────────────────────────
 
 def log_sleep(hours: float, notes: str = "", log_date: str = ""):
