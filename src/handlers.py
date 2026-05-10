@@ -1,8 +1,18 @@
 """Telegram message and command handlers — Buff Buddy."""
 import asyncio
 import io
+import logging
 import re
+import traceback
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+
+log = logging.getLogger(__name__)
+
+
+def _safe_error(e: Exception, context: str = "") -> str:
+    """Log full error privately, return a safe message for Telegram."""
+    log.error(f"Error in {context}: {traceback.format_exc()}")
+    return f"Something went wrong with {context or 'that'}. Check the logs."
 from telegram.ext import ContextTypes, CallbackQueryHandler
 from src import sheets, claude_ai
 from src.config import (
@@ -231,7 +241,7 @@ async def _log_meal_text(text: str, reply, ctx=None, meal_type: str = ""):
         await reply(msg, parse_mode="Markdown")
     except Exception as e:
         import traceback
-        await reply(f"Error: `{traceback.format_exc()[-600:]}`", parse_mode="Markdown")
+        log.error(traceback.format_exc()); await reply(_safe_error(e, "meal logging"))
 
 
 # ── Exercise catalogue handlers ───────────────────────────────────────────────
@@ -273,7 +283,7 @@ async def handle_add_exercise(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
     except Exception as e:
         import traceback
-        await update.message.reply_text(f"Error: `{traceback.format_exc()[-400:]}`", parse_mode="Markdown")
+        log.error(traceback.format_exc()); await update.message.reply_text(_safe_error(e))
 
 
 async def handle_create_set(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -313,7 +323,7 @@ async def handle_create_set(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
     except Exception as e:
         import traceback
-        await update.message.reply_text(f"Error: `{traceback.format_exc()[-400:]}`", parse_mode="Markdown")
+        log.error(traceback.format_exc()); await update.message.reply_text(_safe_error(e))
 
 
 async def handle_target_muscle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -358,7 +368,7 @@ async def handle_target_muscle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         import traceback
-        await update.message.reply_text(f"Error: `{traceback.format_exc()[-400:]}`", parse_mode="Markdown")
+        log.error(traceback.format_exc()); await update.message.reply_text(_safe_error(e))
 
 
 # ── Gym logging ───────────────────────────────────────────────────────────────
@@ -417,7 +427,7 @@ async def _log_gym_session(text: str, ctx, reply):
         await reply(f"{session_summary}\n\n{buddy_reply}", parse_mode="Markdown")
     except Exception as e:
         import traceback
-        await reply(f"Error: `{traceback.format_exc()[-600:]}`", parse_mode="Markdown")
+        log.error(traceback.format_exc()); await reply(_safe_error(e, "meal logging"))
 
 
 # ── Recovery logging ──────────────────────────────────────────────────────────
@@ -439,7 +449,7 @@ async def _log_recovery(text: str, reply):
         await reply(buddy_reply)
     except Exception as e:
         import traceback
-        await reply(f"Error: `{traceback.format_exc()[-400:]}`", parse_mode="Markdown")
+        log.error(traceback.format_exc()); await reply(_safe_error(e, "logging"))
 
 
 # ── Emotions logging ──────────────────────────────────────────────────────────
@@ -454,7 +464,7 @@ async def _log_emotions(text: str, reply):
         await reply(buddy_reply)
     except Exception as e:
         import traceback
-        await reply(f"Error: `{traceback.format_exc()[-400:]}`", parse_mode="Markdown")
+        log.error(traceback.format_exc()); await reply(_safe_error(e, "logging"))
 
 
 # ── Period logging ────────────────────────────────────────────────────────────
@@ -571,7 +581,7 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(msg, parse_mode="Markdown")
     except Exception as e:
         import traceback
-        await update.message.reply_text(f"Error: `{traceback.format_exc()[-600:]}`", parse_mode="Markdown")
+        log.error(traceback.format_exc()); await update.message.reply_text(_safe_error(e))
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────
