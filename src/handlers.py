@@ -534,20 +534,15 @@ async def _show_gym_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE, set_nam
             ctx.user_data["gym_exercises"] = exercises
             ctx.user_data["gym_set_name"] = set_name
             ctx.user_data["awaiting_gym_results"] = True
-            lines = [f"*Game time. {set_name}:*"]
+            lines = [f"*{set_name}*"]
             for i, ex in enumerate(exercises, 1):
                 name = ex.get("Exercise Name", "")
-                muscle = ex.get("Muscle Group", "")
                 last_w = ex.get("Last Weight (kg)", "")
-                line = f"{i}. {name} — {muscle}"
+                line = f"{i}. {name}"
                 if last_w:
                     line += f" — last {last_w}kg"
                 lines.append(line)
-            lines.append(f"\n_{len(exercises)} exercises. Optimal is 5-8 total._")
-            if len(exercises) < 8:
-                lines.append("Want extras? Say `suggest something` or `I want to hit [muscle]`.")
-            lines.append("\nLog results when ready — one per line or all at once:")
-            lines.append("`1 - 15kg 3x8` · `2 - 80kg 4x5 RPE 7` · `3 - skip`")
+            lines.append("\nLog when done:")
             await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
         else:
             ctx.user_data["awaiting_gym_results"] = True
