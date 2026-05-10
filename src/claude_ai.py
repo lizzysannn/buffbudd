@@ -365,32 +365,46 @@ BODY_TAGS = [
 ]
 
 def parse_body_checkin(text: str) -> dict:
-    """Extract weight, body fat %, feel tags, and notes from a check-in message."""
+    """Extract weight, body composition metrics, feel tags, and notes from a check-in."""
     tags_list = ", ".join(BODY_TAGS)
     prompt = (
-        f"Parse this body check-in message. Reply as JSON only:\n"
-        f'{{"weight_kg": <float or null>, "body_fat_pct": <float or null>, '
-        f'"tags": ["<tag1>", ...], "notes": "<any extra detail or empty>"}}\n\n'
+        "Parse this body check-in message. Reply as JSON only:\n"
+        '{"weight_kg": <float or null>, "body_fat_pct": <float or null>, '
+        '"lean_mass_kg": <float or null>, "skeletal_muscle_kg": <float or null>, '
+        '"fat_mass_kg": <float or null>, "visceral_fat_level": <int or null>, '
+        '"tags": ["<tag1>", ...], "notes": "<any extra detail or empty>"}\n\n'
         f"Available tags (pick all that apply, exact spelling): {tags_list}\n\n"
         "Rules:\n"
-        "- Extract weight in kg (e.g. '52.3kg' → 52.3). null if not mentioned.\n"
-        "- Extract body fat % if mentioned (e.g. '22%', '22% body fat'). null if not.\n"
-        "- tags: match to available tags. 'groggy' → lethargic+not enough sleep. 'stiff' → sore.\n"
-        "- notes: anything else they said that doesn't fit a tag.\n\n"
+        "- weight_kg: total body weight in kg. null if not mentioned.\n"
+        "- body_fat_pct: body fat percentage (e.g. '27.8%' → 27.8). null if not mentioned.\n"
+        "- lean_mass_kg: lean body mass in kg. null if not mentioned.\n"
+        "- skeletal_muscle_kg: skeletal muscle mass in kg. null if not mentioned.\n"
+        "- fat_mass_kg: total fat mass in kg. null if not mentioned.\n"
+        "- visceral_fat_level: visceral fat level as integer (e.g. 'visceral fat 6' → 6). null if not.\n"
+        "- tags: match feelings to available tags. 'groggy'→lethargic+not enough sleep. 'stiff'→sore.\n"
+        "- notes: anything else that doesn't fit the above fields.\n\n"
         f"Message: {text}"
     )
-    raw = _call(prompt, max_tokens=150)
+    raw = _call(prompt, max_tokens=200)
     start, end = raw.find("{"), raw.rfind("}") + 1
     try:
         data = json.loads(raw[start:end])
         return {
             "weight_kg": float(data["weight_kg"]) if data.get("weight_kg") else None,
             "body_fat_pct": float(data["body_fat_pct"]) if data.get("body_fat_pct") else None,
+            "lean_mass_kg": float(data["lean_mass_kg"]) if data.get("lean_mass_kg") else None,
+            "skeletal_muscle_kg": float(data["skeletal_muscle_kg"]) if data.get("skeletal_muscle_kg") else None,
+            "fat_mass_kg": float(data["fat_mass_kg"]) if data.get("fat_mass_kg") else None,
+            "visceral_fat_level": int(data["visceral_fat_level"]) if data.get("visceral_fat_level") else None,
             "tags": [t for t in (data.get("tags") or []) if t in BODY_TAGS],
             "notes": data.get("notes", ""),
         }
     except Exception:
-        return {"weight_kg": None, "body_fat_pct": None, "tags": [], "notes": text[:100]}
+        return {
+            "weight_kg": None, "body_fat_pct": None, "lean_mass_kg": None,
+            "skeletal_muscle_kg": None, "fat_mass_kg": None, "visceral_fat_level": None,
+            "tags": [], "notes": text[:100],
+        }
 
 
 def body_checkin_reply(weight_kg: float | None, bmi: float | None, tags: list, notes: str) -> str:

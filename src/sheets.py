@@ -260,16 +260,30 @@ def get_week_gym() -> list[dict]:
 
 # ── Body Log ──────────────────────────────────────────────────────────────────
 
-def log_body(weight_kg: float | None, body_fat_pct: float | None, tags: list[str], notes: str = ""):
-    """Log a body check-in. Weight and body fat are optional."""
+def log_body(
+    weight_kg: float | None,
+    body_fat_pct: float | None,
+    tags: list[str],
+    notes: str = "",
+    lean_mass_kg: float | None = None,
+    skeletal_muscle_kg: float | None = None,
+    fat_mass_kg: float | None = None,
+    visceral_fat_level: int | None = None,
+):
+    """Log a body check-in. All fields except tags are optional."""
     ws = _sheet(SHEET_BODY)
     now = datetime.now()
     cycle_day, phase = get_cycle_info()
 
     bmi = round(weight_kg / (HEIGHT_M ** 2), 1) if weight_kg else ""
-    lean_mass = ""
-    if weight_kg and body_fat_pct:
+
+    # Lean mass: use provided value, or derive from weight + BF%
+    if lean_mass_kg:
+        lean_mass = lean_mass_kg
+    elif weight_kg and body_fat_pct:
         lean_mass = round(weight_kg * (1 - body_fat_pct / 100), 1)
+    else:
+        lean_mass = ""
 
     ws.append_row([
         now.strftime("%Y-%m-%d"),
@@ -278,6 +292,9 @@ def log_body(weight_kg: float | None, body_fat_pct: float | None, tags: list[str
         bmi,
         body_fat_pct if body_fat_pct else "",
         lean_mass,
+        skeletal_muscle_kg if skeletal_muscle_kg else "",
+        fat_mass_kg if fat_mass_kg else "",
+        visceral_fat_level if visceral_fat_level else "",
         ", ".join(tags) if tags else "",
         notes,
         cycle_day or "",

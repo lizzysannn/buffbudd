@@ -151,6 +151,10 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             sheets.log_body(
                 pending["weight_kg"], pending["body_fat_pct"],
                 pending["tags"], pending["notes"],
+                lean_mass_kg=pending.get("lean_mass_kg"),
+                skeletal_muscle_kg=pending.get("skeletal_muscle_kg"),
+                fat_mass_kg=pending.get("fat_mass_kg"),
+                visceral_fat_level=pending.get("visceral_fat_level"),
             )
             buddy_reply = claude_ai.body_checkin_reply(
                 pending["weight_kg"], pending["bmi"],
@@ -549,18 +553,24 @@ async def _log_body_checkin(text: str, reply, ctx=None):
         parsed = claude_ai.parse_body_checkin(text)
         weight = parsed["weight_kg"]
         bf_pct = parsed["body_fat_pct"]
+        lean_mass = parsed["lean_mass_kg"]
+        skeletal_muscle = parsed["skeletal_muscle_kg"]
+        fat_mass = parsed["fat_mass_kg"]
+        visceral_fat = parsed["visceral_fat_level"]
         tags = parsed["tags"]
         notes = parsed["notes"]
 
-        # Calc BMI and lean mass
         bmi = round(weight / (HEIGHT_M ** 2), 1) if weight else None
-        lean_mass = round(weight * (1 - bf_pct / 100), 1) if (weight and bf_pct) else None
+        # Derive lean mass if not given directly
+        if not lean_mass and weight and bf_pct:
+            lean_mass = round(weight * (1 - bf_pct / 100), 1)
 
         if ctx:
             ctx.user_data["pending_body"] = {
                 "weight_kg": weight, "body_fat_pct": bf_pct,
-                "tags": tags, "notes": notes,
-                "bmi": bmi, "lean_mass": lean_mass,
+                "lean_mass_kg": lean_mass, "skeletal_muscle_kg": skeletal_muscle,
+                "fat_mass_kg": fat_mass, "visceral_fat_level": visceral_fat,
+                "tags": tags, "notes": notes, "bmi": bmi,
             }
 
         # Build preview
@@ -570,8 +580,14 @@ async def _log_body_checkin(text: str, reply, ctx=None):
             lines.append(f"📊 BMI: *{bmi}* ({_bmi_category(bmi)})")
         if bf_pct:
             lines.append(f"🔬 Body fat: *{bf_pct}%*")
+        if fat_mass:
+            lines.append(f"🫀 Fat mass: *{fat_mass} kg*")
         if lean_mass:
             lines.append(f"💪 Lean mass: *{lean_mass} kg*")
+        if skeletal_muscle:
+            lines.append(f"🦾 Skeletal muscle: *{skeletal_muscle} kg*")
+        if visceral_fat:
+            lines.append(f"📉 Visceral fat level: *{visceral_fat}*")
         if tags:
             lines.append(f"🏷 Feel: {' · '.join(tags)}")
         if notes:
@@ -990,13 +1006,26 @@ async def cmd_weight(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     max_w = max(weights)
     avg_bmi = round(sum(bmis) / len(bmis), 1) if bmis else None
 
-    # Last body fat / lean mass entry
+    # Last body composition entry
     bf_rows = [r for r in rows if r.get("Body Fat (%)")]
     bf_line = ""
     if bf_rows:
-        last_bf = float(bf_rows[-1]["Body Fat (%)"])
-        last_lm = bf_rows[-1].get("Lean Mass (kg)", "")
-        bf_line = f"\nBody fat: {last_bf}% · Lean mass: {last_lm} kg" if last_lm else f"\nBody fat: {last_bf}%"
+        last = bf_rows[-1]
+        last_bf = float(last["Body Fat (%)"])
+        last_lm = last.get("Lean Mass (kg)", "")
+        last_sm = last.get("Skeletal Muscle (kg)", "")
+        last_fm = last.get("Fat Mass (kg)", "")
+        last_vf = last.get("Visceral Fat Level", "")
+        parts = [f"Body fat: {last_bf}%"]
+        if last_fm:
+            parts.append(f"Fat mass: {last_fm} kg")
+        if last_lm:
+            parts.append(f"Lean: {last_lm} kg")
+        if last_sm:
+            parts.append(f"Muscle: {last_sm} kg")
+        if last_vf:
+            parts.append(f"Visceral: {last_vf}")
+        bf_line = "\n" + " · ".join(parts)
 
     # Feel tag frequency this week
     all_tags: list[str] = []
