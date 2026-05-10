@@ -137,10 +137,10 @@ def get_today_gym() -> list[dict]:
 
 # ── Sleep Log ─────────────────────────────────────────────────────────────────
 
-def log_sleep(hours: float, quality: int):
+def log_sleep(hours: float, notes: str = ""):
     ws = _sheet(SHEET_SLEEP)
     today = date.today().strftime("%Y-%m-%d")
-    ws.append_row([today, hours, quality])
+    ws.append_row([today, hours, notes])
 
 
 def get_sleep_streak() -> int:

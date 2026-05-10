@@ -218,35 +218,34 @@ def gym_session_reply(session_lines: list, has_pr: bool) -> str:
 # ── Recovery / Sleep ──────────────────────────────────────────────────────────
 
 def parse_sleep(text: str) -> dict:
-    """Parse natural sleep description into hours and quality."""
+    """Parse natural sleep description into hours and qualitative notes."""
     prompt = (
         "Parse this sleep description and return JSON only:\n"
-        '{"hours": <total sleep hours as float>, "quality": <1-5 int>, "notes": "<one line summary>"}\n\n'
+        '{"hours": <total sleep hours as float>, "notes": "<capture everything mentioned: dreams, meditation, interruptions, restlessness, anything>"}\n\n'
         "Rules:\n"
         "- Calculate TOTAL sleep by adding up all sleep periods\n"
-        "- quality 1=terrible, 2=poor, 3=ok, 4=good, 5=great\n"
-        "- Infer quality from context (interrupted sleep, mosquitoes, restless = low)\n"
-        "- If times given, calculate duration mathematically\n\n"
+        "- If times given, calculate duration mathematically\n"
+        "- notes: copy across every detail they mentioned — don't summarise, just note it all\n\n"
         f"Message: {text}\n\n"
         "Reply with JSON only."
     )
-    raw = _call(prompt, max_tokens=80)
+    raw = _call(prompt, max_tokens=100)
     start, end = raw.find("{"), raw.rfind("}") + 1
     try:
         data = json.loads(raw[start:end])
         return {
             "hours": float(data.get("hours", 6)),
-            "quality": max(1, min(5, int(data.get("quality", 3)))),
             "notes": data.get("notes", ""),
         }
     except Exception:
-        return {"hours": 6.0, "quality": 3, "notes": text}
+        return {"hours": 6.0, "notes": text}
 
 
-def recovery_reply(hours: float, quality: int, streak: int) -> str:
+def recovery_reply(hours: float, notes: str, streak: int) -> str:
     prompt = (
-        f"Sleep: {hours}h, quality {quality}/5, streak {streak} nights of 7h+.\n\n"
-        "Give a Buff Buddy recovery reply. Max 2 lines. Calm and steady tone."
+        f"Sleep: {hours}h. Notes: {notes or 'none'}. Streak: {streak} nights of 7h+.\n\n"
+        "Give a Buff Buddy recovery reply. Max 2 lines. Calm and steady tone. "
+        "Reference what they mentioned (dreams, meditation, interruptions etc) if noted."
     )
     return _call(prompt, max_tokens=100)
 

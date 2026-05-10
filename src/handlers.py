@@ -78,9 +78,9 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data == "confirm_sleep":
         pending = ctx.user_data.pop("pending_sleep", None)
         if pending:
-            sheets.log_sleep(pending["hours"], pending["quality"])
+            sheets.log_sleep(pending["hours"], pending.get("notes", ""))
             streak = sheets.get_sleep_streak()
-            buddy_reply = claude_ai.recovery_reply(pending["hours"], pending["quality"], streak)
+            buddy_reply = claude_ai.recovery_reply(pending["hours"], pending.get("notes", ""), streak)
             await query.edit_message_text(f"✅ Logged.\n{buddy_reply}")
 
     elif data == "fix_sleep":
@@ -434,11 +434,10 @@ async def _log_gym_session(text: str, ctx, reply):
 async def _log_recovery(text: str, reply, ctx=None):
     try:
         parsed = claude_ai.parse_sleep(text)
-        hours, quality = parsed["hours"], max(1, min(5, parsed["quality"]))
+        hours, notes = parsed["hours"], parsed.get("notes", "")
         if ctx:
-            ctx.user_data["pending_sleep"] = {"hours": hours, "quality": quality}
-        quality_label = {1: "terrible", 2: "poor", 3: "ok", 4: "good", 5: "great"}.get(quality, str(quality))
-        msg = f"*Sleep parsed:* {hours}h · Quality {quality}/5 ({quality_label})\n_{parsed.get('notes', '')}_\n\nCorrect?"
+            ctx.user_data["pending_sleep"] = {"hours": hours, "notes": notes}
+        msg = f"*Sleep:* {hours}h\n_{notes}_\n\nCorrect?" if notes else f"*Sleep:* {hours}h\n\nCorrect?"
         await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("sleep"))
     except Exception as e:
         log.error(traceback.format_exc()); await reply(_safe_error(e, "logging"))
@@ -504,10 +503,9 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
             elif fix_type == "sleep":
                 parsed = claude_ai.parse_sleep(text)
-                hours, quality = parsed["hours"], max(1, min(5, parsed["quality"]))
-                ctx.user_data["pending_sleep"] = {"hours": hours, "quality": quality}
-                quality_label = {1: "terrible", 2: "poor", 3: "ok", 4: "good", 5: "great"}.get(quality, str(quality))
-                msg = f"*Updated:* {hours}h · Quality {quality}/5 ({quality_label})\nCorrect?"
+                hours, notes = parsed["hours"], parsed.get("notes", "")
+                ctx.user_data["pending_sleep"] = {"hours": hours, "notes": notes}
+                msg = f"*Updated:* {hours}h\n_{notes}_\nCorrect?" if notes else f"*Updated:* {hours}h\nCorrect?"
                 await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("sleep"))
 
             elif fix_type == "emotions":
@@ -700,9 +698,13 @@ async def cmd_recovery(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not sleep:
         await update.message.reply_text("No sleep logged today.")
         return
-    h, q = float(sleep["Hours"]), int(sleep["Quality"])
-    recovery = "High" if h >= 7 and q >= 4 else "Medium" if h >= 6 and q >= 3 else "Low"
-    await update.message.reply_text(f"Recovery: *{recovery}* — {h}h, quality {q}/5", parse_mode="Markdown")
+    h = float(sleep["Hours"])
+    notes = sleep.get("Quality", "")
+    recovery = "High" if h >= 7 else "Medium" if h >= 6 else "Low"
+    msg = f"Recovery: *{recovery}* — {h}h"
+    if notes:
+        msg += f"\n_{notes}_"
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
 
 async def cmd_streak(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
