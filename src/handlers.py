@@ -827,6 +827,15 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await _handle_stats_query(text, reply)
         return
 
+    # Done-for-day always wins — even if gym state is pending
+    from src.router import _DONE_RE
+    if _DONE_RE.search(text):
+        ctx.user_data.pop("awaiting_gym_results", None)
+        ctx.user_data.pop("gym_exercises", None)
+        ctx.user_data.pop("gym_set_name", None)
+        await _handle_done_for_day(reply)
+        return
+
     # Gym results flow — waiting for the user to report back after seeing the list
     if ctx.user_data.get("awaiting_gym_results"):
         ctx.user_data.pop("awaiting_gym_results", None)
