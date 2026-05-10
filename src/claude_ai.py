@@ -215,6 +215,31 @@ def gym_session_reply(session_lines: list, has_pr: bool) -> str:
     return _call(prompt, max_tokens=150)
 
 
+# ── Date extraction ───────────────────────────────────────────────────────────
+
+def extract_log_date(text: str) -> str | None:
+    """Return ISO date string if message refers to a past day, else None (= today)."""
+    from datetime import date
+    today = date.today()
+    prompt = (
+        f"Today is {today.strftime('%Y-%m-%d')} ({today.strftime('%A')}).\n"
+        "Does this message refer to a specific past date (yesterday, last night, Monday, etc.)?\n"
+        "If yes, reply with just the date in YYYY-MM-DD format.\n"
+        "If it refers to today or no specific date, reply with: today\n\n"
+        f"Message: {text}\n\n"
+        "Reply with YYYY-MM-DD or 'today' only."
+    )
+    raw = _call(prompt, max_tokens=15).strip().lower()
+    if raw == "today" or not raw:
+        return None
+    try:
+        from datetime import date as _date
+        _date.fromisoformat(raw)
+        return raw if raw < today.isoformat() else None
+    except ValueError:
+        return None
+
+
 # ── Recovery / Sleep ──────────────────────────────────────────────────────────
 
 def parse_sleep(text: str) -> dict:

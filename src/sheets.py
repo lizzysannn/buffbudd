@@ -52,12 +52,14 @@ def infer_meal_type_from_time() -> str:
         return "supper"
 
 
-def log_food(meal_desc: str, calories: int, protein: float, carbs: float, fats: float, meal_type: str = ""):
+def log_food(meal_desc: str, calories: int, protein: float, carbs: float, fats: float, meal_type: str = "", log_date: str = ""):
     ws = _sheet(SHEET_FOOD)
     now = datetime.now()
+    row_date = log_date or now.strftime("%Y-%m-%d")
+    row_time = now.strftime("%H:%M") if not log_date else ""
     ws.append_row([
-        now.strftime("%Y-%m-%d"),
-        now.strftime("%H:%M"),
+        row_date,
+        row_time,
         meal_type or infer_meal_type_from_time(),
         meal_desc,
         calories,
@@ -95,12 +97,14 @@ def get_today_totals() -> dict:
 
 # ── Gym Log ───────────────────────────────────────────────────────────────────
 
-def log_gym(exercise: str, sets: int, reps: int, weight: float, rpe: float | None, notes: str = ""):
+def log_gym(exercise: str, sets: int, reps: int, weight: float, rpe: float | None, notes: str = "", log_date: str = ""):
     ws = _sheet(SHEET_GYM)
     now = datetime.now()
+    row_date = log_date or now.strftime("%Y-%m-%d")
+    row_time = now.strftime("%H:%M") if not log_date else ""
     ws.append_row([
-        now.strftime("%Y-%m-%d"),
-        now.strftime("%H:%M"),
+        row_date,
+        row_time,
         exercise,
         sets,
         reps,
@@ -137,10 +141,10 @@ def get_today_gym() -> list[dict]:
 
 # ── Sleep Log ─────────────────────────────────────────────────────────────────
 
-def log_sleep(hours: float, notes: str = ""):
+def log_sleep(hours: float, notes: str = "", log_date: str = ""):
     ws = _sheet(SHEET_SLEEP)
-    today = date.today().strftime("%Y-%m-%d")
-    ws.append_row([today, hours, notes])
+    row_date = log_date or date.today().strftime("%Y-%m-%d")
+    ws.append_row([row_date, hours, notes])
 
 
 def get_sleep_streak() -> int:
@@ -265,14 +269,15 @@ def log_period_start(symptoms: str = "", notes: str = ""):
     ws.append_row([today, 1, "menstrual", symptoms, "started", notes])
 
 
-def log_emotions(mood: int, energy: int, notes: str = ""):
+def log_emotions(mood: int, energy: int, notes: str = "", log_date: str = ""):
     ws = _sheet(SHEET_EMOTIONS)
     cycle_day, phase = get_cycle_info()
-    today = date.today()
     now = datetime.now()
+    row_date = log_date or now.strftime("%Y-%m-%d")
+    row_time = now.strftime("%H:%M") if not log_date else ""
     ws.append_row([
-        today.strftime("%Y-%m-%d"),
-        now.strftime("%H:%M"),
+        row_date,
+        row_time,
         mood,
         energy,
         notes,

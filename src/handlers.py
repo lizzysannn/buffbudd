@@ -54,7 +54,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pending = ctx.user_data.pop("pending_food", None)
         if pending:
             m, mt = pending["macros"], pending["meal_type"]
-            sheets.log_food(m["description"], m["calories"], m["protein"], m["carbs"], m["fats"], mt)
+            sheets.log_food(m["description"], m["calories"], m["protein"], m["carbs"], m["fats"], mt, pending.get("log_date", ""))
             totals = sheets.get_today_totals()
             msg = (
                 f"✅ Logged.\n"
@@ -78,7 +78,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data == "confirm_sleep":
         pending = ctx.user_data.pop("pending_sleep", None)
         if pending:
-            sheets.log_sleep(pending["hours"], pending.get("notes", ""))
+            sheets.log_sleep(pending["hours"], pending.get("notes", ""), pending.get("log_date", ""))
             streak = sheets.get_sleep_streak()
             buddy_reply = claude_ai.recovery_reply(pending["hours"], pending.get("notes", ""), streak)
             await query.edit_message_text(f"✅ Logged.\n{buddy_reply}")
@@ -96,7 +96,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data == "confirm_emotions":
         pending = ctx.user_data.pop("pending_emotions", None)
         if pending:
-            sheets.log_emotions(pending["mood"], pending["energy"], pending["notes"])
+            sheets.log_emotions(pending["mood"], pending["energy"], pending["notes"], pending.get("log_date", ""))
             cycle_day, phase = sheets.get_cycle_info()
             buddy_reply = claude_ai.emotions_reply(pending["mood"], pending["energy"], pending["notes"], cycle_day, phase)
             await query.edit_message_text(f"✅ Logged.\n{buddy_reply}")
@@ -114,10 +114,11 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data == "confirm_gym":
         pending = ctx.user_data.pop("pending_gym", None)
         if pending:
-            for r in pending:
+            log_date = pending.get("log_date", "")
+            for r in pending.get("results", []):
                 if not r.get("skipped"):
                     w = r.get("weight_kg", r.get("weight", 0))
-                    sheets.log_gym(r["exercise"], r["sets"], r["reps"], w, r.get("rpe"), r.get("notes", ""))
+                    sheets.log_gym(r["exercise"], r["sets"], r["reps"], w, r.get("rpe"), r.get("notes", ""), log_date)
                     if w > 0:
                         sheets.update_exercise_weight(r["exercise"], w)
             ctx.user_data.pop("gym_exercises", None)
@@ -127,6 +128,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data == "cancel_gym":
         ctx.user_data.pop("pending_gym", None)
         ctx.user_data.pop("gym_exercises", None)
+        ctx.user_data.pop("awaiting_gym_results", None)
         await query.edit_message_text("Cancelled — nothing logged.")
 
     elif data == "exercise_confirm":
@@ -189,6 +191,7 @@ MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack", "supper"]
 
 async def _log_meal_text(text: str, reply, ctx=None, meal_type: str = ""):
     try:
+        log_date = claude_ai.extract_log_date(text)
         macros = claude_ai.analyse_food_text(text)
         if macros["calories"] == 0 and macros["protein"] == 0:
             await reply("What did you eat exactly? Give me weights if you have them — e.g. `100g chicken, 150g rice, side salad`")
@@ -197,9 +200,10 @@ async def _log_meal_text(text: str, reply, ctx=None, meal_type: str = ""):
         resolved_type = meal_type or macros.get("meal_type") or sheets.infer_meal_type_from_time()
 
         if ctx:
-            ctx.user_data["pending_food"] = {"macros": macros, "meal_type": resolved_type, "original_text": text}
+            ctx.user_data["pending_food"] = {"macros": macros, "meal_type": resolved_type, "log_date": log_date}
 
-        msg = _build_food_preview(macros, resolved_type)
+        date_note = f" _(logged for {log_date})_" if log_date else ""
+        msg = _build_food_preview(macros, resolved_type) + date_note
         await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("food"))
     except Exception as e:
         log.error(traceback.format_exc()); await reply(_safe_error(e, "meal logging"))
@@ -375,6 +379,7 @@ async def _show_gym_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def _log_gym_session(text: str, ctx, reply):
     """Parse gym results, store pending, show preview for confirmation."""
     try:
+        log_date = claude_ai.extract_log_date(text)
         exercise_list = ctx.user_data.get("gym_exercises", [])
         has_pr = False
         lines = []
@@ -417,11 +422,12 @@ async def _log_gym_session(text: str, ctx, reply):
                 has_pr = True
             lines.append(entry)
 
-        ctx.user_data["pending_gym"] = pending_results
+        ctx.user_data["pending_gym"] = {"results": pending_results, "log_date": log_date}
         buddy_reply = claude_ai.gym_session_reply(lines, has_pr)
         session_summary = "\n".join(lines)
+        date_note = f"\n_(logged for {log_date})_" if log_date else ""
         await reply(
-            f"{session_summary}\n\n{buddy_reply}",
+            f"{session_summary}\n\n{buddy_reply}{date_note}",
             parse_mode="Markdown",
             reply_markup=_gym_confirm_keyboard(),
         )
@@ -433,11 +439,13 @@ async def _log_gym_session(text: str, ctx, reply):
 
 async def _log_recovery(text: str, reply, ctx=None):
     try:
+        log_date = claude_ai.extract_log_date(text)
         parsed = claude_ai.parse_sleep(text)
         hours, notes = parsed["hours"], parsed.get("notes", "")
         if ctx:
-            ctx.user_data["pending_sleep"] = {"hours": hours, "notes": notes}
-        msg = f"*Sleep:* {hours}h\n_{notes}_\n\nCorrect?" if notes else f"*Sleep:* {hours}h\n\nCorrect?"
+            ctx.user_data["pending_sleep"] = {"hours": hours, "notes": notes, "log_date": log_date}
+        date_note = f"\n_(logged for {log_date})_" if log_date else ""
+        msg = f"*Sleep:* {hours}h\n_{notes}_{date_note}\n\nCorrect?" if notes else f"*Sleep:* {hours}h{date_note}\n\nCorrect?"
         await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("sleep"))
     except Exception as e:
         log.error(traceback.format_exc()); await reply(_safe_error(e, "logging"))
@@ -447,12 +455,14 @@ async def _log_recovery(text: str, reply, ctx=None):
 
 async def _log_emotions(text: str, reply, ctx=None):
     try:
+        log_date = claude_ai.extract_log_date(text)
         parsed = claude_ai.parse_emotions(text)
         if ctx:
-            ctx.user_data["pending_emotions"] = parsed
+            ctx.user_data["pending_emotions"] = {**parsed, "log_date": log_date}
+        date_note = f"\n_(logged for {log_date})_" if log_date else ""
         msg = (
             f"*Mood:* {parsed['mood']}/10 · *Energy:* {parsed['energy']}/10\n"
-            f"_{parsed['notes']}_\n\nCorrect?"
+            f"_{parsed['notes']}_{date_note}\n\nCorrect?"
         )
         await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("emotions"))
     except Exception as e:
