@@ -38,13 +38,14 @@
 
 | Tab name | Headers (one per cell in row 1) |
 |---|---|
-| `Food Log` | Date · Time · Meal · Calories · Protein · Carbs · Fats |
+| `Food Log` | Date · Time · Meal Type · Meal · Calories · Protein · Carbs · Fats |
 | `Gym Log` | Date · Time · Exercise · Sets · Reps · Weight · RPE · Notes |
 | `Sleep Log` | Date · Hours · Quality |
 | `Weekly Summary` | Week Start · Avg Calories · Avg Protein · Gym Sessions · Avg Sleep · Goal Score · Notes |
 | `Emotions Log` | Date · Time · Mood (1-10) · Energy (1-10) · Notes · Cycle Day · Phase |
 | `Activity Log` | Date · Activity Type · Duration (mins) · Notes · Cycle Day · Phase |
 | `Cycle Log` | Date · Cycle Day · Phase · Symptoms · Flow · Notes |
+| `Exercise Catalogue` | Exercise Name · Muscle Group · Set · Sets · Last Weight (kg) · Last Used · Notes |
 
 3. Share the sheet with the service account email (Editor access)
 4. Copy the Spreadsheet ID from the URL:
@@ -153,6 +154,10 @@ Railway auto-redeploys every time you `git push`.
 | Mood/Emotions | Tell it how you feel: `feeling tired and stressed today` |
 | Period started | `period started` or any natural phrasing |
 | Activity (walk, yoga etc.) | Describe it: `went for a 30 min walk` |
+| Add exercise to catalogue | `add Romanian Deadlift` — bot looks up muscle group, asks to confirm |
+| Create a new workout set | `create Push Day with Bench Press, OHP, Tricep Dips` |
+| Target a muscle group | `I want to hit legs` — bot shows yours + suggests new ones |
+| Move exercise to a set | `make Romanian Deadlift part of Self Train` |
 
 The bot uses Claude to classify every message — no rigid commands needed. If it's unsure, it'll show buttons to pick the category.
 

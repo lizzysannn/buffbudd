@@ -9,7 +9,7 @@ from src.config import (
     GOOGLE_SERVICE_ACCOUNT_JSON, SPREADSHEET_ID,
     COACH_NUTRITION_DOC_ID, COACH_TRAINING_DOC_ID, WEEKLY_GOALS_DOC_ID,
     SHEET_FOOD, SHEET_GYM, SHEET_SLEEP, SHEET_SUMMARY,
-    SHEET_EMOTIONS, SHEET_ACTIVITY, SHEET_CYCLE,
+    SHEET_EMOTIONS, SHEET_ACTIVITY, SHEET_CYCLE, SHEET_CATALOGUE,
 )
 
 SCOPES = [
@@ -35,12 +35,28 @@ def _sheet(tab: str):
 
 # ── Food Log ──────────────────────────────────────────────────────────────────
 
-def log_food(meal_desc: str, calories: int, protein: float, carbs: float, fats: float):
+def infer_meal_type_from_time() -> str:
+    """Infer meal type from current hour."""
+    hour = datetime.now().hour
+    if 5 <= hour < 11:
+        return "breakfast"
+    elif 11 <= hour < 15:
+        return "lunch"
+    elif 15 <= hour < 18:
+        return "snack"
+    elif 18 <= hour < 22:
+        return "dinner"
+    else:
+        return "supper"
+
+
+def log_food(meal_desc: str, calories: int, protein: float, carbs: float, fats: float, meal_type: str = ""):
     ws = _sheet(SHEET_FOOD)
     now = datetime.now()
     ws.append_row([
         now.strftime("%Y-%m-%d"),
         now.strftime("%H:%M"),
+        meal_type or infer_meal_type_from_time(),
         meal_desc,
         calories,
         protein,
@@ -319,6 +335,107 @@ def get_cycle_summary_data() -> dict:
         "avg_calories": round(sum(int(r.get("Calories", 0)) for r in food) / max(len({r.get("Date") for r in food}), 1)),
         "avg_protein": round(sum(float(r.get("Protein", 0)) for r in food) / max(len({r.get("Date") for r in food}), 1), 1),
     }
+
+
+# ── Exercise Catalogue ────────────────────────────────────────────────────────
+
+def get_exercise_catalogue() -> list[dict]:
+    """Return all rows from Exercise Catalogue."""
+    ws = _sheet(SHEET_CATALOGUE)
+    return ws.get_all_records()
+
+
+def get_exercises_by_set(set_name: str) -> list[dict]:
+    rows = get_exercise_catalogue()
+    return [r for r in rows if str(r.get("Set", "")).lower() == set_name.lower()]
+
+
+def get_optional_exercises() -> list[dict]:
+    rows = get_exercise_catalogue()
+    return [r for r in rows if str(r.get("Set", "")).lower() == "optional"]
+
+
+def get_exercises_by_muscle(muscle_group: str) -> list[dict]:
+    rows = get_exercise_catalogue()
+    return [
+        r for r in rows
+        if muscle_group.lower() in str(r.get("Muscle Group", "")).lower()
+    ]
+
+
+def get_available_sets() -> list[str]:
+    rows = get_exercise_catalogue()
+    sets = {str(r.get("Set", "")) for r in rows if str(r.get("Set", "")).lower() != "optional"}
+    return sorted(sets)
+
+
+def add_exercise_to_catalogue(
+    name: str,
+    muscle_group: str,
+    set_name: str = "optional",
+    sets: int = 3,
+    notes: str = "",
+) -> bool:
+    """Add a new exercise. Returns False if already exists."""
+    existing = get_exercise_catalogue()
+    for r in existing:
+        if str(r.get("Exercise Name", "")).lower() == name.lower():
+            return False
+    ws = _sheet(SHEET_CATALOGUE)
+    ws.append_row([name, muscle_group, set_name, sets, "", "", notes])
+    return True
+
+
+def update_exercise_set(name: str, set_name: str):
+    """Move an exercise to a different set."""
+    ws = _sheet(SHEET_CATALOGUE)
+    rows = ws.get_all_records()
+    for i, r in enumerate(rows, start=2):  # row 1 = header
+        if str(r.get("Exercise Name", "")).lower() == name.lower():
+            ws.update_cell(i, 3, set_name)  # col C = Set
+            return True
+    return False
+
+
+def update_exercise_weight(name: str, weight: float):
+    """Update last weight and last used date after a session."""
+    ws = _sheet(SHEET_CATALOGUE)
+    rows = ws.get_all_records()
+    today = date.today().strftime("%Y-%m-%d")
+    for i, r in enumerate(rows, start=2):
+        if str(r.get("Exercise Name", "")).lower() == name.lower():
+            ws.update_cell(i, 5, weight)   # col E = Last Weight
+            ws.update_cell(i, 6, today)    # col F = Last Used
+            return True
+    return False
+
+
+def create_new_set(set_name: str, exercises: list[dict]):
+    """Bulk-add exercises for a new named set."""
+    ws = _sheet(SHEET_CATALOGUE)
+    for ex in exercises:
+        ws.append_row([
+            ex.get("name", ""),
+            ex.get("muscle_group", ""),
+            set_name,
+            ex.get("sets", 3),
+            "",
+            "",
+            ex.get("notes", ""),
+        ])
+
+
+def get_last_two_weeks_weight(exercise_name: str) -> list[dict]:
+    """Return last 2 weeks of gym log rows for this exercise."""
+    from datetime import timedelta
+    ws = _sheet(SHEET_GYM)
+    rows = ws.get_all_records()
+    cutoff = (date.today() - timedelta(days=14)).strftime("%Y-%m-%d")
+    return [
+        r for r in rows
+        if str(r.get("Exercise", "")).lower() == exercise_name.lower()
+        and str(r.get("Date", "")) >= cutoff
+    ]
 
 
 def parse_exercise_list(doc_text: str) -> list:

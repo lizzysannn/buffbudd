@@ -17,7 +17,8 @@ _SLEEP_RE = re.compile(r"^\s*\d+(\.\d+)?\s+[1-5]\s*$")
 
 
 def classify_intent(text: str) -> str:
-    """Returns: gym | meal | recovery | emotions | period | unknown
+    """Returns: gym | meal | recovery | emotions | period |
+                add_exercise | create_set | target_muscle | unknown
 
     Uses cheap regex first, then Claude for ambiguous cases.
     """
@@ -38,9 +39,12 @@ def classify_intent(text: str) -> str:
         "- recovery: sleep hours, sleep quality, rest, fatigue, recovery\n"
         "- emotions: mood, feelings, stress, mental state, energy levels, how they feel\n"
         "- period: period started, menstrual cycle related\n"
+        "- add_exercise: adding a new exercise to the catalogue (e.g. 'add Romanian Deadlift')\n"
+        "- create_set: creating a new workout set (e.g. 'create Push Day with Bench, OHP')\n"
+        "- target_muscle: user wants to hit a specific muscle group (e.g. 'I want to hit chest', 'what should I do for legs')\n"
         "- unknown: anything else\n\n"
         f"Message: {text}\n\n"
-        "Reply with exactly one word from: gym, meal, recovery, emotions, period, unknown"
+        "Reply with exactly one word from: gym, meal, recovery, emotions, period, add_exercise, create_set, target_muscle, unknown"
     )
     response = _client.messages.create(
         model=CLAUDE_MODEL,
@@ -48,5 +52,5 @@ def classify_intent(text: str) -> str:
         messages=[{"role": "user", "content": prompt}],
     )
     intent = response.content[0].text.strip().lower()
-    valid = {"gym", "meal", "recovery", "emotions", "period", "unknown"}
+    valid = {"gym", "meal", "recovery", "emotions", "period", "add_exercise", "create_set", "target_muscle", "unknown"}
     return intent if intent in valid else "unknown"

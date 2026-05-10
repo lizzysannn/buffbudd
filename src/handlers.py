@@ -97,6 +97,54 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             old_task.cancel()
         await query.edit_message_text("Go ahead, add more.")
 
+    elif data.startswith("mealtype_"):
+        meal_type = data.replace("mealtype_", "")
+        macros = ctx.user_data.pop("pending_macros", None)
+        if macros:
+            sheets.log_food(macros["description"], macros["calories"], macros["protein"], macros["carbs"], macros["fats"], meal_type)
+            totals = sheets.get_today_totals()
+            msg = (
+                f"*{macros['description']}* · _{meal_type.capitalize()}_\n"
+                f"Fuelled. {macros['calories']} cal · {macros['protein']}g protein · {macros['carbs']}g carbs · {macros['fats']}g fat\n\n"
+                f"Today: {totals['calories']} / {DEFAULT_CALORIES} cal · Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g"
+            )
+            await query.edit_message_text(msg, parse_mode="Markdown")
+
+    elif data == "exercise_confirm":
+        ex = ctx.user_data.pop("pending_exercise", None)
+        if ex:
+            added = sheets.add_exercise_to_catalogue(ex["name"], ex["muscle_group"], ex["set"], ex["sets"], ex["notes"])
+            if added:
+                await query.edit_message_text(f"*{ex['name']}* added to catalogue. Mission logged.", parse_mode="Markdown")
+            else:
+                await query.edit_message_text(f"*{ex['name']}* is already in your catalogue.", parse_mode="Markdown")
+
+    elif data == "exercise_cancel":
+        ctx.user_data.pop("pending_exercise", None)
+        await query.edit_message_text("Cancelled.")
+
+    elif data == "set_confirm":
+        pending = ctx.user_data.pop("pending_set", None)
+        if pending:
+            sheets.create_new_set(pending["set_name"], pending["exercises"])
+            await query.edit_message_text(f"*{pending['set_name']}* created with {len(pending['exercises'])} exercises. Mission logged.", parse_mode="Markdown")
+
+    elif data == "set_cancel":
+        ctx.user_data.pop("pending_set", None)
+        await query.edit_message_text("Cancelled.")
+
+    elif data == "muscle_add_suggestions":
+        suggestions = ctx.user_data.pop("muscle_suggestions", [])
+        added = []
+        for s in suggestions:
+            sheets.add_exercise_to_catalogue(s["name"], s["muscle_group"], "optional", 3, s.get("notes", ""))
+            added.append(s["name"])
+        await query.edit_message_text(f"Added to catalogue: {', '.join(added)}. They'll show up next time you ask for extras.", parse_mode="Markdown")
+
+    elif data == "muscle_skip":
+        ctx.user_data.pop("muscle_suggestions", None)
+        await query.edit_message_text("Got it — no changes to catalogue.")
+
     elif data.startswith("intent_"):
         intent = data.replace("intent_", "")
         messages = ctx.user_data.get("pending_messages", [])
@@ -140,33 +188,177 @@ async def _finalise_session(update: Update, ctx: ContextTypes.DEFAULT_TYPE, via_
 
 # ── Meal logging ──────────────────────────────────────────────────────────────
 
-async def _log_meal_text(text: str, reply, ctx=None):
+MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack", "supper"]
+
+
+async def _log_meal_text(text: str, reply, ctx=None, meal_type: str = ""):
     try:
         macros = claude_ai.analyse_food_text(text)
         if macros["calories"] == 0 and macros["protein"] == 0:
-            # Ask for clarification, keep session open
-            await reply(
-                "What did you eat exactly? Give me weights if you have them — e.g. `100g chicken, 150g rice, side salad`"
-            )
+            await reply("What did you eat exactly? Give me weights if you have them — e.g. `100g chicken, 150g rice, side salad`")
             if ctx:
-                # Re-open session so next message retries as meal
                 ctx.user_data["session_intent"] = "meal"
                 ctx.user_data["session_messages"] = []
             return
-        sheets.log_food(macros["description"], macros["calories"], macros["protein"], macros["carbs"], macros["fats"])
+
+        # Resolve meal type: explicit arg > Claude extraction > time-of-day
+        resolved_type = meal_type or macros.get("meal_type") or sheets.infer_meal_type_from_time()
+
+        # If meal type still unknown after all inference, ask with buttons
+        if not resolved_type and ctx:
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("🌅 Breakfast", callback_data="mealtype_breakfast"),
+                InlineKeyboardButton("☀️ Lunch", callback_data="mealtype_lunch"),
+            ], [
+                InlineKeyboardButton("🌙 Dinner", callback_data="mealtype_dinner"),
+                InlineKeyboardButton("🍎 Snack", callback_data="mealtype_snack"),
+                InlineKeyboardButton("🌃 Supper", callback_data="mealtype_supper"),
+            ]])
+            ctx.user_data["pending_macros"] = macros
+            await reply("Which meal is this?", reply_markup=keyboard)
+            return
+
+        sheets.log_food(macros["description"], macros["calories"], macros["protein"], macros["carbs"], macros["fats"], resolved_type)
         totals = sheets.get_today_totals()
         msg = (
-            f"*{macros['description']}*\n"
+            f"*{macros['description']}* · _{resolved_type.capitalize()}_\n"
             f"Fuelled. {macros['calories']} cal · {macros['protein']}g protein · {macros['carbs']}g carbs · {macros['fats']}g fat\n"
             f"_{macros['note']}_\n\n"
             f"Today: {totals['calories']} / {DEFAULT_CALORIES} cal · Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g"
         )
         if totals["protein"] < DEFAULT_PROTEIN * 0.5 and totals["meals"] >= 2:
-            msg += "\n\nProtein's low, Liz. Next meal, prioritise it."
+            msg += "\n\nProtein's low, Liz. Prioritise it next meal."
         await reply(msg, parse_mode="Markdown")
     except Exception as e:
         import traceback
         await reply(f"Error: `{traceback.format_exc()[-600:]}`", parse_mode="Markdown")
+
+
+# ── Exercise catalogue handlers ───────────────────────────────────────────────
+
+async def handle_add_exercise(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _is_authorised(update):
+        return await _deny(update)
+    text = update.message.text.strip()
+    await update.message.reply_text("Looking that up...")
+    try:
+        parsed = claude_ai.parse_add_exercise_request(text)
+        name = parsed.get("name", "")
+        if not name:
+            await update.message.reply_text("Couldn't figure out the exercise name. Try: `add Romanian Deadlift`", parse_mode="Markdown")
+            return
+        info = claude_ai.research_exercise(name)
+        muscle = info.get("muscle_group", "Unknown")
+        notes = info.get("notes", "")
+        # Store pending confirmation in user_data
+        ctx.user_data["pending_exercise"] = {
+            "name": name,
+            "muscle_group": muscle,
+            "set": parsed.get("set", "optional"),
+            "sets": parsed.get("sets", 3),
+            "notes": notes,
+        }
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Add it", callback_data="exercise_confirm"),
+            InlineKeyboardButton("❌ Cancel", callback_data="exercise_cancel"),
+        ]])
+        await update.message.reply_text(
+            f"*{name}*\n"
+            f"Hits: {muscle}\n"
+            f"_{notes}_\n\n"
+            f"Set: {parsed.get('set', 'optional')} · {parsed.get('sets', 3)} sets\n\n"
+            "Add to catalogue?",
+            reply_markup=keyboard,
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        import traceback
+        await update.message.reply_text(f"Error: `{traceback.format_exc()[-400:]}`", parse_mode="Markdown")
+
+
+async def handle_create_set(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _is_authorised(update):
+        return await _deny(update)
+    text = update.message.text.strip()
+    await update.message.reply_text("Building your new set...")
+    try:
+        parsed = claude_ai.parse_create_set_request(text)
+        set_name = parsed.get("set_name", "New Set")
+        exercise_names = [e.get("name", "") for e in parsed.get("exercises", []) if e.get("name")]
+
+        # Research each exercise
+        enriched = []
+        for name in exercise_names:
+            info = claude_ai.research_exercise(name)
+            enriched.append({
+                "name": name,
+                "muscle_group": info.get("muscle_group", "Unknown"),
+                "sets": 3,
+                "notes": info.get("notes", ""),
+            })
+
+        ctx.user_data["pending_set"] = {"set_name": set_name, "exercises": enriched}
+        lines = [f"*New set: {set_name}*"]
+        for ex in enriched:
+            lines.append(f"• {ex['name']} — {ex['muscle_group']}")
+
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Create it", callback_data="set_confirm"),
+            InlineKeyboardButton("❌ Cancel", callback_data="set_cancel"),
+        ]])
+        await update.message.reply_text(
+            "\n".join(lines) + "\n\nCreate this set?",
+            reply_markup=keyboard,
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        import traceback
+        await update.message.reply_text(f"Error: `{traceback.format_exc()[-400:]}`", parse_mode="Markdown")
+
+
+async def handle_target_muscle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _is_authorised(update):
+        return await _deny(update)
+    text = update.message.text.strip()
+    await update.message.reply_text("Checking your catalogue...")
+    try:
+        muscle = claude_ai.parse_target_muscle_request(text)
+        catalogue = sheets.get_exercise_catalogue()
+        matches = sheets.get_exercises_by_muscle(muscle)
+
+        lines = [f"*{muscle.capitalize()} exercises in your catalogue:*"]
+        if matches:
+            for ex in matches:
+                last = ex.get("Last Weight (kg)", "")
+                line = f"• {ex['Exercise Name']} ({ex['Set']})"
+                if last:
+                    line += f" — last {last}kg"
+                lines.append(line)
+        else:
+            lines.append("Nothing in your catalogue yet for this muscle group.")
+
+        # Suggest new exercises to add
+        existing_names = [ex["Exercise Name"] for ex in catalogue]
+        suggestions = claude_ai.suggest_new_exercises_for_muscle(muscle, existing_names)
+
+        if suggestions:
+            lines.append(f"\n*Not in your catalogue — want to add any?*")
+            for s in suggestions:
+                lines.append(f"• {s['name']} — _{s['notes']}_")
+
+            # Store suggestions for quick-add
+            ctx.user_data["muscle_suggestions"] = suggestions
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("➕ Add suggestions", callback_data="muscle_add_suggestions"),
+                InlineKeyboardButton("Skip", callback_data="muscle_skip"),
+            ]])
+            await update.message.reply_text("\n".join(lines), reply_markup=keyboard, parse_mode="Markdown")
+        else:
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+    except Exception as e:
+        import traceback
+        await update.message.reply_text(f"Error: `{traceback.format_exc()[-400:]}`", parse_mode="Markdown")
 
 
 # ── Gym logging ───────────────────────────────────────────────────────────────
@@ -178,27 +370,38 @@ async def _log_gym_session(text: str, ctx, reply):
         lines = []
 
         if exercise_list:
-            results = claude_ai.parse_session_results(exercise_list, text)
+            # exercise_list may be dicts (from catalogue) or strings (legacy)
+            ex_names = [
+                e.get("Exercise Name", e) if isinstance(e, dict) else e
+                for e in exercise_list
+            ]
+            results = claude_ai.parse_session_results(ex_names, text)
             for r in results:
                 if r.get("skipped"):
                     lines.append(f"{r['number']}. {r['exercise']} — skipped")
                     continue
-                sheets.log_gym(r["exercise"], r["sets"], r["reps"], r["weight_kg"], r.get("rpe"), r.get("notes", ""))
+                w = r["weight_kg"]
+                sheets.log_gym(r["exercise"], r["sets"], r["reps"], w, r.get("rpe"), r.get("notes", ""))
+                # Update catalogue with latest weight
+                if w > 0:
+                    sheets.update_exercise_weight(r["exercise"], w)
                 last = sheets.get_last_session(r["exercise"])
-                entry = f"{r['number']}. {r['exercise']} — {r['weight_kg']}kg {r['sets']}x{r['reps']}"
+                entry = f"{r['number']}. {r['exercise']} — {w}kg {r['sets']}x{r['reps']}"
                 if r.get("rpe"):
                     entry += f" RPE {r['rpe']}"
                 if last and float(last.get("Weight", 0)) > 0:
                     prev = float(last.get("Weight", 0))
-                    if r["weight_kg"] > prev:
-                        entry += f" 🔺 +{r['weight_kg'] - prev}kg"
+                    if w > prev:
+                        entry += f" 🔺 +{w - prev}kg"
                         has_pr = True
-                    elif r["weight_kg"] < prev:
+                    elif w < prev:
                         entry += f" ↓ was {prev}kg"
                 lines.append(entry)
         else:
             parsed = claude_ai.parse_gym_entry(text)
             sheets.log_gym(parsed["exercise"], parsed["sets"], parsed["reps"], parsed["weight"], parsed["rpe"], parsed["notes"])
+            if parsed["weight"] > 0:
+                sheets.update_exercise_weight(parsed["exercise"], parsed["weight"])
             last = sheets.get_last_session(parsed["exercise"])
             pb = sheets.get_pb(parsed["exercise"])
             entry = f"{parsed['exercise']} — {parsed['weight']}kg {parsed['sets']}x{parsed['reps']}"
@@ -290,6 +493,17 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     from src.router import classify_intent
     intent = classify_intent(text)
 
+    # Catalogue intents — handle immediately, no session needed
+    if intent == "add_exercise":
+        await handle_add_exercise(update, ctx)
+        return
+    if intent == "create_set":
+        await handle_create_set(update, ctx)
+        return
+    if intent == "target_muscle":
+        await handle_target_muscle(update, ctx)
+        return
+
     if intent == "unknown":
         await _ask_intent(update, text)
         ctx.user_data["pending_messages"] = [text]
@@ -298,14 +512,26 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Special gym flow: show exercise list first
     if intent == "gym":
         try:
-            doc_text = sheets.get_coach_training()
-            exercises = sheets.parse_exercise_list(doc_text)
+            # Pull from Exercise Catalogue (Self Train set)
+            available_sets = sheets.get_available_sets()
+            set_name = available_sets[0] if available_sets else "Self Train"
+            exercises = sheets.get_exercises_by_set(set_name)
             if exercises:
                 ctx.user_data["gym_exercises"] = exercises
-                lines = ["*Game time. Today's session:*"]
+                ctx.user_data["gym_set_name"] = set_name
+                lines = [f"*Game time. {set_name}:*"]
                 for i, ex in enumerate(exercises, 1):
-                    lines.append(f"{i}. {ex}")
-                lines.append("\nLog results — one line per exercise or all at once:")
+                    name = ex.get("Exercise Name", "")
+                    muscle = ex.get("Muscle Group", "")
+                    last_w = ex.get("Last Weight (kg)", "")
+                    line = f"{i}. {name} — {muscle}"
+                    if last_w:
+                        line += f" — last {last_w}kg"
+                    lines.append(line)
+                lines.append(f"\n_{len(exercises)} exercises. Optimal is 5-8 total._")
+                if len(exercises) < 8:
+                    lines.append("Want extras? Say `suggest something` or `I want to hit [muscle]`.")
+                lines.append("\nLog results when ready — one per line or all at once:")
                 lines.append("`1 - 15kg 3x8` · `2 - 80kg 4x5 RPE 7` · `3 - skip`")
                 _open_session(ctx, "gym", "")
                 _schedule_silence(update, ctx)
@@ -331,10 +557,11 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await file.download_to_memory(buf)
         image_bytes = buf.getvalue()
         macros = claude_ai.analyse_food_photo(image_bytes)
-        sheets.log_food(macros["description"], macros["calories"], macros["protein"], macros["carbs"], macros["fats"])
+        resolved_type = macros.get("meal_type") or sheets.infer_meal_type_from_time()
+        sheets.log_food(macros["description"], macros["calories"], macros["protein"], macros["carbs"], macros["fats"], resolved_type)
         totals = sheets.get_today_totals()
         msg = (
-            f"*{macros['description']}*\n"
+            f"*{macros['description']}* · _{resolved_type.capitalize()}_\n"
             f"Fuelled. {macros['calories']} cal · {macros['protein']}g protein · {macros['carbs']}g carbs · {macros['fats']}g fat\n"
             f"_{macros['note']}_\n\n"
             f"Today: {totals['calories']} / {DEFAULT_CALORIES} cal · Protein {totals['protein']:.0f} / {DEFAULT_PROTEIN}g"

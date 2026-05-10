@@ -38,5 +38,6 @@ SHEET_SUMMARY = "Weekly Summary"
 SHEET_EMOTIONS = "Emotions Log"
 SHEET_ACTIVITY = "Activity Log"
 SHEET_CYCLE = "Cycle Log"
+SHEET_CATALOGUE = "Exercise Catalogue"
 
 CLAUDE_MODEL = "claude-sonnet-4-20250514"

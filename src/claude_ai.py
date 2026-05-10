@@ -65,6 +65,7 @@ def analyse_food_photo(image_bytes: bytes, mime_type: str = "image/jpeg") -> dic
         "Analyse this meal photo and estimate macros. "
         "Reply in this exact format, nothing else:\n"
         "DESCRIPTION: <brief meal description>\n"
+        "MEAL_TYPE: <breakfast|lunch|dinner|snack|supper — guess from food type, else NONE>\n"
         "CALORIES: <integer>\n"
         "PROTEIN: <grams as decimal>\n"
         "CARBS: <grams as decimal>\n"
@@ -92,6 +93,7 @@ def analyse_food_text(text: str) -> dict:
         "Analyse this meal description and estimate macros. "
         "Reply in this exact format, nothing else:\n"
         "DESCRIPTION: <brief meal description>\n"
+        "MEAL_TYPE: <breakfast|lunch|dinner|snack|supper — extract from text if mentioned, else NONE>\n"
         "CALORIES: <integer>\n"
         "PROTEIN: <grams as decimal>\n"
         "CARBS: <grams as decimal>\n"
@@ -109,8 +111,11 @@ def _parse_macro_response(text: str) -> dict:
         if ":" in line:
             key, _, val = line.partition(":")
             result[key.strip().lower()] = val.strip()
+    raw_type = result.get("meal_type", "NONE").strip().lower()
+    meal_type = raw_type if raw_type in {"breakfast", "lunch", "dinner", "snack", "supper"} else ""
     return {
         "description": result.get("description", "Unknown meal"),
+        "meal_type": meal_type,
         "calories": int(result.get("calories", 0)),
         "protein": float(result.get("protein", 0)),
         "carbs": float(result.get("carbs", 0)),
@@ -251,6 +256,120 @@ def generate_cycle_summary(cycle_data: dict) -> str:
         "Keep it real. No toxic positivity. Max 10 lines total."
     )
     return _call(prompt, max_tokens=600)
+
+
+# ── Exercise catalogue AI ─────────────────────────────────────────────────────
+
+def research_exercise(name: str) -> dict:
+    """Look up muscle groups and basic info for an exercise."""
+    prompt = (
+        f"Exercise: {name}\n\n"
+        "Reply as JSON only:\n"
+        '{"muscle_group": "<primary muscle group>", "secondary": "<secondary muscles>", '
+        '"category": "<push|pull|legs|core|arms|cardio>", "notes": "<one line tip>"}'
+    )
+    raw = _call(prompt, max_tokens=150)
+    start = raw.find("{")
+    end = raw.rfind("}") + 1
+    try:
+        return json.loads(raw[start:end])
+    except Exception:
+        return {"muscle_group": "Unknown", "secondary": "", "category": "", "notes": ""}
+
+
+def suggest_extras_from_catalogue(
+    catalogue: list,
+    muscle_groups_done: list,
+    count_needed: int,
+    coach_notes: str = "",
+) -> list:
+    """Pick extras from optional exercises in catalogue."""
+    optionals = [r for r in catalogue if str(r.get("Set", "")).lower() == "optional"]
+    if not optionals:
+        return []
+    cat_str = "\n".join(
+        f"- {r['Exercise Name']} ({r['Muscle Group']}) — last used: {r.get('Last Used', 'never')}"
+        for r in optionals
+    )
+    done_str = ", ".join(muscle_groups_done) if muscle_groups_done else "none yet"
+    prompt = (
+        f"Available optional exercises:\n{cat_str}\n\n"
+        f"Muscle groups already hit today: {done_str}\n"
+        f"Coach notes: {coach_notes or 'none'}\n"
+        f"Need {count_needed} extra exercise(s).\n\n"
+        "Pick the best options prioritising: unused muscle groups, exercises not done recently, coach notes.\n"
+        "Reply as JSON array only:\n"
+        '[{"name": "Exercise Name", "reason": "one line why"}]'
+    )
+    raw = _call(prompt, max_tokens=300)
+    start = raw.find("[")
+    end = raw.rfind("]") + 1
+    try:
+        return json.loads(raw[start:end])
+    except Exception:
+        return []
+
+
+def suggest_new_exercises_for_muscle(muscle_group: str, existing_names: list) -> list:
+    """Suggest new exercises for a muscle group not already in catalogue."""
+    existing_str = ", ".join(existing_names) if existing_names else "none"
+    prompt = (
+        f"Muscle group: {muscle_group}\n"
+        f"Already in catalogue: {existing_str}\n\n"
+        "Suggest 3 effective exercises NOT already in the list above.\n"
+        "Reply as JSON array only:\n"
+        '[{"name": "Exercise Name", "muscle_group": "<primary>", "notes": "<one line tip>"}]'
+    )
+    raw = _call(prompt, max_tokens=400)
+    start = raw.find("[")
+    end = raw.rfind("]") + 1
+    try:
+        return json.loads(raw[start:end])
+    except Exception:
+        return []
+
+
+def parse_add_exercise_request(text: str) -> dict:
+    """Extract exercise name (and optional set/notes) from natural language."""
+    prompt = (
+        f"Message: {text}\n\n"
+        "Extract the exercise being added. Reply as JSON only:\n"
+        '{"name": "Exercise Name", "set": "<set name if mentioned, else optional>", '
+        '"sets": <integer or 3>, "notes": "<any extra detail or empty>"}'
+    )
+    raw = _call(prompt, max_tokens=150)
+    start = raw.find("{")
+    end = raw.rfind("}") + 1
+    try:
+        return json.loads(raw[start:end])
+    except Exception:
+        return {"name": text.strip(), "set": "optional", "sets": 3, "notes": ""}
+
+
+def parse_create_set_request(text: str) -> dict:
+    """Extract set name and exercises from 'create Push Day with X, Y, Z'."""
+    prompt = (
+        f"Message: {text}\n\n"
+        "Extract the new set name and exercises. Reply as JSON only:\n"
+        '{"set_name": "Set Name", "exercises": [{"name": "Exercise Name"}]}'
+    )
+    raw = _call(prompt, max_tokens=400)
+    start = raw.find("{")
+    end = raw.rfind("}") + 1
+    try:
+        return json.loads(raw[start:end])
+    except Exception:
+        return {"set_name": "New Set", "exercises": []}
+
+
+def parse_target_muscle_request(text: str) -> str:
+    """Extract the target muscle group from 'I want to hit X'."""
+    prompt = (
+        f"Message: {text}\n\n"
+        "What muscle group does the user want to target? Reply with just the muscle group name, nothing else.\n"
+        "Examples: chest, back, legs, shoulders, arms, core, glutes, hamstrings"
+    )
+    return _call(prompt, max_tokens=20).strip().lower()
 
 
 def generate_motivation_message(trigger: str, context: str) -> str:
