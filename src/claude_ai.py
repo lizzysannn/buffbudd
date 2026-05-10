@@ -270,6 +270,20 @@ def generate_end_of_day_coaching(day_summary: str, week_summary: str) -> str:
     return _call(prompt, max_tokens=200)
 
 
+def generate_daily_summary_note(context: str, missing: list[str]) -> str:
+    """Evening coaching note — references what was logged, calls out gaps, asks about missing items."""
+    missing_str = ", ".join(missing) if missing else "nothing"
+    prompt = (
+        f"Daily log summary:\n{context}\n\n"
+        f"Not logged today: {missing_str}\n\n"
+        "Write a Buff Buddy evening check-in note. Max 4 lines.\n"
+        "- Call out one specific win or concern from today's numbers.\n"
+        "- If anything is missing from 'Not logged today', ask about it naturally (e.g. 'How did you sleep last night?' or 'How are you feeling today?') — max one question.\n"
+        "- End with one sharp priority for tomorrow."
+    )
+    return _call(prompt, max_tokens=220)
+
+
 # ── Date extraction ───────────────────────────────────────────────────────────
 
 def extract_log_date(text: str) -> str | None:

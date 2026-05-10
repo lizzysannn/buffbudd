@@ -237,6 +237,15 @@ def get_today_sleep() -> dict | None:
     return matches[-1] if matches else None
 
 
+def get_today_emotions() -> dict | None:
+    """Return today's most recent emotions log row, or None."""
+    ws = _sheet(SHEET_EMOTIONS)
+    today = _norm_date(date.today().isoformat())
+    rows = ws.get_all_records()
+    matches = [r for r in rows if _norm_date(r.get("Date", "")) == today]
+    return matches[-1] if matches else None
+
+
 # ── Weekly Summary ────────────────────────────────────────────────────────────
 
 def log_weekly_summary(data: dict):

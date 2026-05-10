@@ -42,50 +42,122 @@ async def _sleep_checkin(bot: Bot):
 
 
 async def _daily_summary(bot: Bot):
-    totals = sheets.get_today_totals()
-    sleep = sheets.get_today_sleep()
-    gym = sheets.get_today_gym()
+    from datetime import date as _date
+    SUGAR_TARGET = 25.0
 
-    sleep_notes = (sleep.get("Notes") or sleep.get("Quality") or "").strip() if sleep else ""
-    sleep_str = f"{sleep['Hours']}h" + (f" · {sleep_notes}" if sleep_notes else "") if sleep else "Not logged"
-    gym_str = f"{len(gym)} sets" if gym else "Rest day"
-    recovery = "—"
+    totals   = sheets.get_today_totals()
+    sleep    = sheets.get_today_sleep()
+    gym      = sheets.get_today_gym()
+    emotions = sheets.get_today_emotions()
+    body     = sheets.get_body_by_date(_date.today().isoformat())
+
+    today_str = _date.today().strftime("%a, %d %b")
+    lines = [f"*Evening Check-in — {today_str}*\n"]
+
+    # ── Nutrition ─────────────────────────────────────────────────────────────
+    cal  = totals["calories"]
+    pro  = totals["protein"]
+    carb = totals["carbs"]
+    fat  = totals["fats"]
+    sug  = totals["sugar"]
+    cal_pct = int(cal / DEFAULT_CALORIES * 100)
+    pro_pct = int(pro / DEFAULT_PROTEIN * 100)
+
+    cal_gap = DEFAULT_CALORIES - cal
+    cal_status = f"↓{abs(int(cal_gap))} under" if cal_gap > 0 else f"↑{abs(int(cal_gap))} over"
+    pro_status = "✅" if pro >= DEFAULT_PROTEIN else f"↓{abs(int(DEFAULT_PROTEIN - pro))}g short"
+    sug_status = "✅" if sug <= SUGAR_TARGET else f"⚠️ +{sug - SUGAR_TARGET:.0f}g over"
+
+    lines.append("🍱 *Nutrition*")
+    lines.append(f"Calories: {cal} / {DEFAULT_CALORIES} ({cal_pct}%) · {cal_status}")
+    lines.append(f"Protein:  {pro:.0f}g / {DEFAULT_PROTEIN}g ({pro_pct}%) · {pro_status}")
+    lines.append(f"Carbs: {carb:.0f}g · Fats: {fat:.0f}g · Sugar: {sug:.0f}g {sug_status}")
+    if totals["meals"] == 0:
+        lines.append("_Nothing logged today_")
+    lines.append("")
+
+    # ── Training ──────────────────────────────────────────────────────────────
+    lines.append("🏋️ *Training*")
+    if gym:
+        strength = [r for r in gym if str(r.get("Type", "strength")).lower() != "cardio"]
+        cardio   = [r for r in gym if str(r.get("Type", "")).lower() == "cardio"]
+        exercises = list({str(r.get("Exercise", "")) for r in strength if r.get("Exercise")})
+        if exercises:
+            lines.append(f"{len(strength)} strength sets — " + ", ".join(exercises))
+        if cardio:
+            total_min = sum(int(r.get("Duration (min)", 0) or 0) for r in cardio)
+            cardio_names = list({str(r.get("Exercise", "Cardio")) for r in cardio})
+            lines.append(f"{total_min}min cardio — " + ", ".join(cardio_names))
+    else:
+        lines.append("Rest day")
+    lines.append("")
+
+    # ── Recovery ──────────────────────────────────────────────────────────────
+    lines.append("😴 *Recovery*")
     if sleep:
-        h = float(sleep["Hours"])
-        recovery = "High" if h >= 7 else "Medium" if h >= 6 else "Low"
+        h = float(sleep.get("Hours", 0))
+        notes = (sleep.get("Notes") or sleep.get("Quality") or "").strip()
+        recovery_label = "High 🟢" if h >= 7 else "Medium 🟡" if h >= 6 else "Low 🔴"
+        lines.append(f"Sleep: {h}h · {recovery_label}" + (f" · _{notes}_" if notes else ""))
+    else:
+        lines.append("Sleep: not logged")
+    lines.append("")
 
-    cal_pct = int(totals["calories"] / DEFAULT_CALORIES * 100)
-    pro_pct = int(totals["protein"] / DEFAULT_PROTEIN * 100)
+    # ── Mood / Emotions ───────────────────────────────────────────────────────
+    lines.append("💬 *Mood*")
+    if emotions:
+        mood   = emotions.get("Mood", "")
+        energy = emotions.get("Energy", "")
+        notes  = str(emotions.get("Notes", "")).strip()
+        parts = []
+        if mood:   parts.append(f"Mood {mood}/10")
+        if energy: parts.append(f"Energy {energy}/10")
+        lines.append(" · ".join(parts) + (f" · _{notes}_" if notes else ""))
+    else:
+        lines.append("Not logged")
+    lines.append("")
 
-    context = (
-        f"Calories: {totals['calories']} ({cal_pct}% of target)\n"
-        f"Protein: {totals['protein']:.0f}g ({pro_pct}% of target)\n"
-        f"Sleep: {sleep_str}, Recovery: {recovery}\n"
-        f"Training: {gym_str}"
+    # ── Body check-in ─────────────────────────────────────────────────────────
+    lines.append("⚖️ *Body*")
+    if body and (body.get("Weight (kg)") or body.get("Body Feel")):
+        w    = body.get("Weight (kg)", "")
+        bf   = body.get("Body Fat (%)", "")
+        tags = body.get("Body Feel", "")
+        parts = []
+        if w:    parts.append(f"{w}kg")
+        if bf:   parts.append(f"BF {bf}%")
+        if tags: parts.append(f"_{tags}_")
+        lines.append(" · ".join(parts))
+    else:
+        lines.append("Not logged")
+    lines.append("")
+
+    # ── What's missing + coaching note ────────────────────────────────────────
+    missing = []
+    if not sleep:    missing.append("sleep")
+    if not emotions: missing.append("mood")
+    if not body:     missing.append("morning weight / body feel")
+
+    sleep_str_ctx  = f"{float(sleep.get('Hours', 0))}h" if sleep else "not logged"
+    mood_str_ctx   = f"{emotions.get('Mood')}/10" if emotions else "not logged"
+    weight_str_ctx = str(body.get("Weight (kg)", "not logged")) if body else "not logged"
+    context_for_claude = (
+        f"Calories: {cal} / {DEFAULT_CALORIES} ({cal_pct}%)\n"
+        f"Protein: {pro:.0f}g / {DEFAULT_PROTEIN}g ({pro_pct}%)\n"
+        f"Carbs: {carb:.0f}g, Fats: {fat:.0f}g, Sugar: {sug:.0f}g\n"
+        f"Training: {'rest day' if not gym else f'{len(gym)} sets'}\n"
+        f"Sleep: {sleep_str_ctx}\n"
+        f"Mood: {mood_str_ctx}\n"
+        f"Body weight: {weight_str_ctx}"
     )
-
     try:
-        nutrition_doc = sheets.get_coach_nutrition()
-        training_doc = sheets.get_coach_training()
-        note = claude_ai.generate_coaching_note(context, nutrition_doc, training_doc)
+        note = claude_ai.generate_daily_summary_note(context_for_claude, missing)
     except Exception:
-        note = "Keep showing up. Consistency is the strategy."
+        note = "Day's logged. Keep going."
 
-    protein_warn = ""
-    if totals["protein"] < DEFAULT_PROTEIN * 0.7:
-        protein_warn = f"\nProtein at {pro_pct}% — you need to hit your target."
+    lines.append(f"_{note}_")
 
-    msg = (
-        "*Evening Check-in*\n"
-        f"Calories: {totals['calories']} / {DEFAULT_CALORIES} ({cal_pct}%)\n"
-        f"Protein: {totals['protein']:.0f}g / {DEFAULT_PROTEIN}g ({pro_pct}%)\n"
-        f"Sleep: {sleep_str}\n"
-        f"Recovery: {recovery}\n"
-        f"Training: {gym_str}"
-        f"{protein_warn}\n\n"
-        f"Coach: _{note}_"
-    )
-    await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="Markdown")
+    await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="\n".join(lines), parse_mode="Markdown")
 
 
 async def _weekly_report(bot: Bot):
