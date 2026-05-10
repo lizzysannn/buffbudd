@@ -550,6 +550,8 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _log_emotions(text, reply, ctx=ctx)
     elif intent == "period":
         await _log_period(text, reply, bot=ctx.bot, chat_id=TELEGRAM_CHAT_ID)
+    elif intent == "food_query":
+        await _handle_food_query(text, reply)
     elif intent == "add_exercise":
         await handle_add_exercise(update, ctx)
     elif intent == "create_set":
@@ -596,6 +598,41 @@ def _build_food_preview(macros: dict, resolved_type: str) -> str:
     )
     lines.append("\nCorrect?")
     return "\n".join(lines)
+
+
+# ── Food query (past days) ────────────────────────────────────────────────────
+
+async def _handle_food_query(text: str, reply):
+    try:
+        log_date = claude_ai.extract_log_date(text)
+        if not log_date:
+            # Default to yesterday if no date detected but they're asking about past
+            from datetime import date, timedelta
+            log_date = (date.today() - timedelta(days=1)).isoformat()
+
+        rows = sheets.get_food_by_date(log_date)
+        if not rows:
+            await reply(f"Nothing logged for {log_date}.")
+            return
+
+        total_cal = sum(int(r.get("Calories", 0)) for r in rows)
+        total_pro = sum(float(r.get("Protein", 0)) for r in rows)
+        total_carbs = sum(float(r.get("Carbs", 0)) for r in rows)
+        total_fats = sum(float(r.get("Fats", 0)) for r in rows)
+
+        lines = [f"*{log_date} — what you ate:*\n"]
+        current_meal = None
+        for r in rows:
+            meal = str(r.get("Meal Type", "")).capitalize()
+            if meal != current_meal:
+                current_meal = meal
+                lines.append(f"\n_{meal}_")
+            lines.append(f"• {r.get('Meal', '')} — {r.get('Calories', 0)} cal · {r.get('Protein', 0)}g P")
+
+        lines.append(f"\n*Total: {total_cal} cal · {total_pro:.0f}g protein · {total_carbs:.0f}g carbs · {total_fats:.0f}g fat*")
+        await reply("\n".join(lines), parse_mode="Markdown")
+    except Exception as e:
+        log.error(traceback.format_exc()); await reply(_safe_error(e, "food query"))
 
 
 # ── Photo handler ─────────────────────────────────────────────────────────────

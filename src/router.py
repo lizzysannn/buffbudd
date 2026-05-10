@@ -42,9 +42,10 @@ def classify_intent(text: str) -> str:
         "- add_exercise: adding a new exercise to the catalogue (e.g. 'add Romanian Deadlift')\n"
         "- create_set: creating a new workout set (e.g. 'create Push Day with Bench, OHP')\n"
         "- target_muscle: user wants to hit a specific muscle group (e.g. 'I want to hit chest', 'what should I do for legs')\n"
+        "- food_query: asking to see/review food logged on a past or specific day (e.g. 'what did I eat yesterday', 'show me yesterday's food', 'what was my lunch last Monday')\n"
         "- unknown: anything else\n\n"
         f"Message: {text}\n\n"
-        "Reply with exactly one word from: gym, meal, recovery, emotions, period, add_exercise, create_set, target_muscle, unknown"
+        "Reply with exactly one word from: gym, meal, recovery, emotions, period, add_exercise, create_set, target_muscle, food_query, unknown"
     )
     response = _client.messages.create(
         model=CLAUDE_MODEL,
@@ -52,5 +53,5 @@ def classify_intent(text: str) -> str:
         messages=[{"role": "user", "content": prompt}],
     )
     intent = response.content[0].text.strip().lower()
-    valid = {"gym", "meal", "recovery", "emotions", "period", "add_exercise", "create_set", "target_muscle", "unknown"}
+    valid = {"gym", "meal", "recovery", "emotions", "period", "add_exercise", "create_set", "target_muscle", "food_query", "unknown"}
     return intent if intent in valid else "unknown"

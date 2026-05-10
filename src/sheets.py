@@ -77,6 +77,12 @@ def delete_last_food_row():
         ws.delete_rows(len(all_rows))
 
 
+def get_food_by_date(date_str: str) -> list[dict]:
+    ws = _sheet(SHEET_FOOD)
+    rows = ws.get_all_records()
+    return [r for r in rows if str(r.get("Date", "")) == date_str]
+
+
 def get_today_food() -> list[dict]:
     ws = _sheet(SHEET_FOOD)
     today = date.today().strftime("%Y-%m-%d")
