@@ -192,7 +192,9 @@ MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack", "supper"]
 async def _log_meal_text(text: str, reply, ctx=None, meal_type: str = ""):
     try:
         log_date = claude_ai.extract_log_date(text)
-        macros = claude_ai.analyse_food_text(text)
+        inferred_type = meal_type or sheets.infer_meal_type_from_time()
+        meal_history = sheets.get_recent_meal_descriptions(inferred_type)
+        macros = claude_ai.analyse_food_text(text, meal_history=meal_history)
         if macros["calories"] == 0 and macros["protein"] == 0:
             await reply("What did you eat exactly? Give me weights if you have them — e.g. `100g chicken, 150g rice, side salad`")
             return
@@ -658,7 +660,9 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         # Use caption text alongside photo so bot isn't guessing blind
         caption = (update.message.caption or "").strip()
-        macros = claude_ai.analyse_food_photo(image_bytes, caption_hint=caption)
+        inferred_type = sheets.infer_meal_type_from_time()
+        meal_history = sheets.get_recent_meal_descriptions(inferred_type)
+        macros = claude_ai.analyse_food_photo(image_bytes, caption_hint=caption, meal_history=meal_history)
 
         resolved_type = macros.get("meal_type") or sheets.infer_meal_type_from_time()
         ctx.user_data["pending_food"] = {"macros": macros, "meal_type": resolved_type}

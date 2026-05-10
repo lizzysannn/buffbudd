@@ -77,6 +77,24 @@ def delete_last_food_row():
         ws.delete_rows(len(all_rows))
 
 
+def get_recent_meal_descriptions(meal_type: str = "", limit: int = 8) -> list[str]:
+    """Return recent unique meal descriptions for context, optionally filtered by meal type."""
+    ws = _sheet(SHEET_FOOD)
+    rows = ws.get_all_records()
+    if meal_type:
+        rows = [r for r in rows if str(r.get("Meal Type", "")).lower() == meal_type.lower()]
+    # Most recent first, deduplicated
+    seen, result = set(), []
+    for r in reversed(rows):
+        desc = str(r.get("Meal", "")).strip()
+        if desc and desc not in seen:
+            seen.add(desc)
+            result.append(desc)
+        if len(result) >= limit:
+            break
+    return result
+
+
 def get_food_by_date(date_str: str) -> list[dict]:
     ws = _sheet(SHEET_FOOD)
     rows = ws.get_all_records()

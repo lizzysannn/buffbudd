@@ -59,14 +59,18 @@ def _call(prompt: str, max_tokens: int = 300, system: str = BUFF_BUDDY_SYSTEM) -
 
 # ── Food ──────────────────────────────────────────────────────────────────────
 
-def analyse_food_photo(image_bytes: bytes, mime_type: str = "image/jpeg", caption_hint: str = "") -> dict:
+def analyse_food_photo(image_bytes: bytes, mime_type: str = "image/jpeg", caption_hint: str = "", meal_history: list[str] | None = None) -> dict:
     b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
     hint_line = f"\nUser description: {caption_hint}" if caption_hint else ""
+    history_line = ""
+    if meal_history:
+        history_line = "\n\nThis user's recent meals for reference — use to infer their usual cooking style, portions, and preferences:\n" + "\n".join(f"- {m}" for m in meal_history)
     prompt = (
         "Analyse this meal photo and estimate macros per item. "
-        "The user's description takes priority over what you see — use it to correct your visual guess. "
-        "Include EVERY item mentioned, even if macros are near zero (e.g. black coffee = ~5 cal)."
-        f"{hint_line}\n\n"
+        "The user's description takes priority over what you see. "
+        "Use their meal history to infer cooking style and portions (e.g. if they always have half-boiled eggs, don't guess fried). "
+        "Include EVERY item visible or mentioned, even near-zero macro items."
+        f"{hint_line}{history_line}\n\n"
         "Reply in this exact JSON format, nothing else:\n"
         "{\n"
         '  "meal_type": "breakfast|lunch|dinner|snack|supper|NONE",\n'
@@ -91,10 +95,15 @@ def analyse_food_photo(image_bytes: bytes, mime_type: str = "image/jpeg", captio
     return _parse_itemised_response(response.content[0].text)
 
 
-def analyse_food_text(text: str) -> dict:
+def analyse_food_text(text: str, meal_history: list[str] | None = None) -> dict:
+    history_line = ""
+    if meal_history:
+        history_line = "\nThis user's recent meals for reference — use to infer usual cooking style, portions, and preferences:\n" + "\n".join(f"- {m}" for m in meal_history) + "\n"
     prompt = (
         "Analyse this meal description and estimate macros per item. "
-        "Include EVERY item mentioned, even if macros are near zero (e.g. black coffee = ~5 cal, water = 0).\n\n"
+        "Include EVERY item mentioned, even if macros are near zero (e.g. black coffee = ~5 cal, water = 0). "
+        "Use the meal history to infer cooking style and typical portions when details are vague.\n"
+        f"{history_line}\n"
         "Reply in this exact JSON format, nothing else:\n"
         "{\n"
         '  "meal_type": "breakfast|lunch|dinner|snack|supper|NONE",\n'
