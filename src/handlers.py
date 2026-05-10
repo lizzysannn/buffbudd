@@ -650,27 +650,13 @@ async def _handle_food_query(text: str, reply):
 async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not _is_authorised(update):
         return await _deny(update)
-    await update.message.reply_text("Analysing meal...")
-    try:
-        photo = update.message.photo[-1]
-        file = await ctx.bot.get_file(photo.file_id)
-        buf = io.BytesIO()
-        await file.download_to_memory(buf)
-        image_bytes = buf.getvalue()
-
-        # Use caption text alongside photo so bot isn't guessing blind
-        caption = (update.message.caption or "").strip()
-        inferred_type = sheets.infer_meal_type_from_time()
-        meal_history = sheets.get_recent_meal_descriptions(inferred_type)
-        macros = claude_ai.analyse_food_photo(image_bytes, caption_hint=caption, meal_history=meal_history)
-
-        resolved_type = macros.get("meal_type") or sheets.infer_meal_type_from_time()
-        ctx.user_data["pending_food"] = {"macros": macros, "meal_type": resolved_type}
-        msg = _build_food_preview(macros, resolved_type)
-        await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("food"))
-    except Exception as e:
-        log.error(traceback.format_exc())
-        await update.message.reply_text(_safe_error(e, "photo analysis"))
+    # No image analysis — just prompt for a text description
+    caption = (update.message.caption or "").strip()
+    if caption:
+        # Caption provided — treat it as a meal description directly
+        await _log_meal_text(caption, update.message.reply_text, ctx=ctx)
+    else:
+        await update.message.reply_text("What did you have? Describe it and I'll log the macros.")
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────
