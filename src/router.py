@@ -26,10 +26,12 @@ _FOOD_QUERY_RE = re.compile(
 _STATS_RE = re.compile(
     r"\b(stats|my\s+stats|give\s+me\s+(my\s+)?(stats|summary|overview|recap)|"
     r"tell\s+me\s+(my\s+)?(stats|summary|overview|progress|results?)|"
-    r"show\s+me\s+(my\s+)?(stats|summary|overview|progress|results?)|"
+    r"show\s+(me\s+)?(my\s+)?(stats|summary|overview|progress|results?|log)|"
     r"how\s+(did\s+i\s+do|am\s+i\s+doing)|"
-    r"(weekly|daily|today'?s?|yesterday'?s?)\s+(summary|stats|recap|overview|results?)|"
-    r"summary\s+for\s+(today|yesterday|this\s+week|last\s+week|"
+    r"(weekly|daily|today'?s?|yesterday'?s?|yest'?s?)\s+(summary|stats|recap|overview|results?|log)|"
+    r"(log|summary|stats)\s+(from|for)\s+(today|yesterday|yest|this\s+week|last\s+week|"
+    r"monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
+    r"summary\s+for\s+(today|yesterday|yest|this\s+week|last\s+week|"
     r"monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b",
     re.IGNORECASE,
 )

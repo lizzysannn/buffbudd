@@ -265,7 +265,7 @@ def extract_log_date(text: str) -> str | None:
     lower = text.lower()
 
     # Fast-path regex for common patterns
-    if re.search(r"\byesterday\b|\blast night\b|\blast evening\b", lower):
+    if re.search(r"\byesterday\b|\blast night\b|\blast evening\b|\byest\b", lower):
         return (today - timedelta(days=1)).isoformat()
     if re.search(r"\b2 days ago\b|\btwo days ago\b", lower):
         return (today - timedelta(days=2)).isoformat()

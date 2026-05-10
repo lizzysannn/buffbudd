@@ -968,7 +968,7 @@ async def _handle_food_query(text: str, reply):
 
         # Weekly gym progress
         today = date.today()
-        days_left = 6 - today.weekday()  # weekday(): Mon=0, Sun=6. Days left after today until Sun.
+        days_left = 7 - today.weekday()  # Mon=7 … Sun=1, always includes today
         gym_done = sheets.get_week_gym_days()
         gym_needed = max(0, DEFAULT_GYM_SESSIONS_WEEK - gym_done)
         lines.append(f"\n*Gym this week:* {gym_done} / {DEFAULT_GYM_SESSIONS_WEEK} sessions")
@@ -1010,10 +1010,16 @@ async def _handle_stats_query(text: str, reply):
         gym_rows  = sheets.get_gym_by_date(log_date)
         sleep_row = sheets.get_sleep_by_date(log_date)
 
-        label = "Yesterday" if log_date == (date.today() - timedelta(days=1)).isoformat() \
-                else ("Today" if log_date == date.today().isoformat() else log_date)
+        d_obj = date.fromisoformat(log_date)
+        date_fmt = d_obj.strftime("%a, %d %b")
+        if log_date == date.today().isoformat():
+            label = f"Today — {date_fmt}"
+        elif log_date == (date.today() - timedelta(days=1)).isoformat():
+            label = f"Yesterday — {date_fmt}"
+        else:
+            label = date_fmt
 
-        lines = [f"*{label}'s Summary*\n"]
+        lines = [f"*{label}*\n"]
 
         # ── Food ──────────────────────────────────────────────────────────────
         if food_rows:
@@ -1070,7 +1076,7 @@ async def _handle_stats_query(text: str, reply):
 
         # ── Gym week progress ─────────────────────────────────────────────────
         today = date.today()
-        days_left = 6 - today.weekday()
+        days_left = 7 - today.weekday()  # Mon=7 … Sun=1, always includes today
         gym_done = sheets.get_week_gym_days()
         gym_needed = max(0, DEFAULT_GYM_SESSIONS_WEEK - gym_done)
         lines.append(f"📅 *Gym this week:* {gym_done} / {DEFAULT_GYM_SESSIONS_WEEK}")
@@ -1112,7 +1118,7 @@ async def _handle_week_stats(reply):
 
         gym_days = len({r.get("Date") for r in gym})
         today = date.today()
-        days_left = 6 - today.weekday()
+        days_left = 7 - today.weekday()  # Mon=7 … Sun=1, includes today
         gym_needed = max(0, DEFAULT_GYM_SESSIONS_WEEK - gym_days)
         lines.append(f"🏋️ *Gym:* {gym_days} / {DEFAULT_GYM_SESSIONS_WEEK} sessions")
         if gym_needed == 0:
@@ -1133,8 +1139,8 @@ async def _handle_quest_check(reply):
     try:
         from datetime import date, timedelta
         today = date.today()
-        days_elapsed = today.weekday() + 1   # Mon=1 … Sun=7
-        days_left = 7 - days_elapsed
+        days_elapsed = today.weekday() + 1      # Mon=1 … Sun=7
+        days_left = 7 - today.weekday()         # Mon=7 … Sun=1, includes today
 
         food_week  = sheets.get_week_food()
         gym_week   = sheets.get_week_gym()
@@ -1277,7 +1283,7 @@ async def cmd_summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     cycle_str = f"Day {cycle_day} · {phase}" if cycle_day else "—"
     gym_week = sheets.get_week_gym_days()
     gym_needed = max(0, DEFAULT_GYM_SESSIONS_WEEK - gym_week)
-    days_left = 6 - _date.today().weekday()
+    days_left = 7 - _date.today().weekday()  # Mon=7 … Sun=1, includes today
     gym_week_str = f"{gym_week} / {DEFAULT_GYM_SESSIONS_WEEK} sessions this week"
     if gym_needed > 0:
         gym_week_str += f" · {gym_needed} more needed · {days_left}d left"
