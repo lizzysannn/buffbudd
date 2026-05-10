@@ -1427,23 +1427,47 @@ async def _handle_done_for_day(reply):
             lines.append(f"📊 *vs Yesterday* — {' · '.join(parts)}" if parts else "📊 *vs Yesterday* — no comparable data")
         lines.append("")
 
-        # ── This week ─────────────────────────────────────────────────────────
+        # ── This week: all 5 targets ──────────────────────────────────────────
         gym_done    = sheets.get_week_gym_days()
         cardio_done = sheets.get_week_cardio_sessions(DEFAULT_CARDIO_MIN)
-        gym_needed    = max(0, DEFAULT_GYM_SESSIONS_WEEK - gym_done)
-        cardio_needed = max(0, DEFAULT_CARDIO_SESSIONS_WEEK - cardio_done)
-        food_week = sheets.get_week_food()
-        days_food_w = len({r.get("Date") for r in food_week}) or 1
-        avg_pro_week = sum(float(r.get("Protein", 0)) for r in food_week) / days_food_w
+        food_week   = sheets.get_week_food()
+        sleep_week  = sheets.get_week_sleep()
 
-        g = f"{gym_done}/{DEFAULT_GYM_SESSIONS_WEEK} gym {'✅' if gym_needed==0 else f'· {gym_needed} more'}"
-        c = f"{cardio_done}/{DEFAULT_CARDIO_SESSIONS_WEEK} cardio {'✅' if cardio_needed==0 else f'· {cardio_needed} more · {days_left}d left'}"
-        p = f"avg {avg_pro_week:.0f}g protein {'✅' if avg_pro_week>=DEFAULT_PROTEIN else f'· ↓{DEFAULT_PROTEIN-avg_pro_week:.0f}g/day'}"
-        lines.append(f"*This week* — {g} · {c} · {p}\n")
+        # Days hitting calorie target (≤ DEFAULT_CALORIES)
+        food_by_day: dict = {}
+        for r in food_week:
+            d = r.get("Date", "")
+            if d not in food_by_day:
+                food_by_day[d] = {"cal": 0, "pro": 0}
+            food_by_day[d]["cal"] += int(r.get("Calories", 0))
+            food_by_day[d]["pro"] += float(r.get("Protein", 0))
+        days_logged = len(food_by_day) or 1
+        days_cal_hit = sum(1 for v in food_by_day.values() if v["cal"] <= DEFAULT_CALORIES)
+        days_pro_hit = sum(1 for v in food_by_day.values() if v["pro"] >= DEFAULT_PROTEIN)
+
+        # Days hitting sleep target (≥ 7h)
+        days_sleep_hit = sum(1 for r in sleep_week if float(r.get("Hours", 0)) >= 7)
+        days_sleep_logged = len(sleep_week)
+
+        gym_tick     = "✅" if gym_done    >= DEFAULT_GYM_SESSIONS_WEEK    else f"({max(0, DEFAULT_GYM_SESSIONS_WEEK - gym_done)} more · {days_left}d left)"
+        cardio_tick  = "✅" if cardio_done >= DEFAULT_CARDIO_SESSIONS_WEEK else f"({max(0, DEFAULT_CARDIO_SESSIONS_WEEK - cardio_done)} more · {days_left}d left)"
+        cal_tick     = "✅" if days_cal_hit >= days_logged                  else f"({days_logged - days_cal_hit} day{'s' if days_logged - days_cal_hit != 1 else ''} over)"
+        pro_tick     = "✅" if days_pro_hit >= days_logged                  else f"({days_logged - days_pro_hit} day{'s' if days_logged - days_pro_hit != 1 else ''} short)"
+        sleep_tick   = "✅" if days_sleep_hit > 0 and days_sleep_hit >= days_sleep_logged else f"({days_sleep_logged - days_sleep_hit}/{days_sleep_logged} days under 7h)"
+
+        lines.append(f"*This week so far*")
+        lines.append(f"  💪 Strength: {gym_done}/{DEFAULT_GYM_SESSIONS_WEEK} sessions {gym_tick}")
+        lines.append(f"  🏃 Cardio: {cardio_done}/{DEFAULT_CARDIO_SESSIONS_WEEK} sessions {cardio_tick}")
+        lines.append(f"  🍱 Calories: {days_cal_hit}/{days_logged} days on target {cal_tick}")
+        lines.append(f"  🥩 Protein: {days_pro_hit}/{days_logged} days on target {pro_tick}")
+        lines.append(f"  😴 Sleep 7h+: {days_sleep_hit}/{days_sleep_logged} days {sleep_tick}")
+        lines.append("")
 
         # ── Coach push ────────────────────────────────────────────────────────
         day_str  = f"Cal {total_cal}/{DEFAULT_CALORIES}, P {total_pro:.0f}g/{DEFAULT_PROTEIN}g, Sugar {total_sugar:.0f}g, Gym: {'yes' if gym_rows else 'rest'}, Sleep: {sleep_row.get('Hours','?') if sleep_row else 'not logged'}"
-        week_str = f"Gym {gym_done}/{DEFAULT_GYM_SESSIONS_WEEK}, Cardio {cardio_done}/{DEFAULT_CARDIO_SESSIONS_WEEK}, avg P {avg_pro_week:.0f}g, {days_left}d left"
+        week_str = (f"Gym {gym_done}/{DEFAULT_GYM_SESSIONS_WEEK}, Cardio {cardio_done}/{DEFAULT_CARDIO_SESSIONS_WEEK}, "
+                    f"Cal on-target {days_cal_hit}/{days_logged}d, Protein on-target {days_pro_hit}/{days_logged}d, "
+                    f"Sleep 7h+ {days_sleep_hit}/{days_sleep_logged}d, {days_left}d left this week")
         yest_str = f"Cal {yest_cal}, P {yest_pro:.0f}g, Sugar {yest_sug:.0f}g, Gym: {'yes' if yest_gym else 'rest'}" if (yest_food or yest_gym) else ""
         try:
             note = claude_ai.generate_end_of_day_coaching(day_str, week_str, yest_str)

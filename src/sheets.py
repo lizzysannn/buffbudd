@@ -346,6 +346,16 @@ def get_prev_week_sleep() -> list[dict]:
     return [r for r in rows if prev_mon <= _norm_date(r.get("Date", "")) <= prev_sun]
 
 
+def get_week_sleep() -> list[dict]:
+    """Return sleep rows for the current Mon–Sun week."""
+    from datetime import timedelta
+    ws = _sheet(SHEET_SLEEP)
+    rows = ws.get_all_records()
+    today = date.today()
+    week_start = _norm_date((today - timedelta(days=today.weekday())).isoformat())
+    return [r for r in rows if _norm_date(r.get("Date", "")) >= week_start]
+
+
 def get_week_gym_days() -> int:
     """Return number of unique gym days this week (Mon–Sun)."""
     rows = get_week_gym()
