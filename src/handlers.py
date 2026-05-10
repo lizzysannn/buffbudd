@@ -501,27 +501,35 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         fix_type = ctx.user_data.pop("awaiting_fix")
         try:
             if fix_type == "food":
-                original_desc = ctx.user_data.get("pending_food", {}).get("macros", {}).get("description", "")
-                original_mt = ctx.user_data.get("pending_food", {}).get("meal_type", "")
+                original = ctx.user_data.get("pending_food", {})
+                original_desc = original.get("macros", {}).get("description", "")
+                original_mt = original.get("meal_type", "")
+                # Carry existing date, or detect one from the correction text
+                log_date = original.get("log_date") or claude_ai.extract_log_date(text)
                 corrected = claude_ai.analyse_food_text(
                     f"Original meal: {original_desc}. Correction: {text}"
                 )
                 resolved_type = corrected.get("meal_type") or original_mt or sheets.infer_meal_type_from_time()
-                ctx.user_data["pending_food"] = {"macros": corrected, "meal_type": resolved_type}
-                msg = _build_food_preview(corrected, resolved_type)
+                ctx.user_data["pending_food"] = {"macros": corrected, "meal_type": resolved_type, "log_date": log_date}
+                date_note = f"\n📅 *Logging for {log_date}*" if log_date else ""
+                msg = _build_food_preview(corrected, resolved_type) + date_note
                 await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("food"))
 
             elif fix_type == "sleep":
+                log_date = ctx.user_data.get("pending_sleep", {}).get("log_date") or claude_ai.extract_log_date(text)
                 parsed = claude_ai.parse_sleep(text)
                 hours, notes = parsed["hours"], parsed.get("notes", "")
-                ctx.user_data["pending_sleep"] = {"hours": hours, "notes": notes}
-                msg = f"*Updated:* {hours}h\n_{notes}_\nCorrect?" if notes else f"*Updated:* {hours}h\nCorrect?"
+                ctx.user_data["pending_sleep"] = {"hours": hours, "notes": notes, "log_date": log_date}
+                date_note = f"\n📅 *Logging for {log_date}*" if log_date else ""
+                msg = f"*Updated:* {hours}h\n_{notes}_{date_note}\nCorrect?" if notes else f"*Updated:* {hours}h{date_note}\nCorrect?"
                 await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("sleep"))
 
             elif fix_type == "emotions":
+                log_date = ctx.user_data.get("pending_emotions", {}).get("log_date") or claude_ai.extract_log_date(text)
                 parsed = claude_ai.parse_emotions(text)
-                ctx.user_data["pending_emotions"] = parsed
-                msg = f"*Updated:* Mood {parsed['mood']}/10 · Energy {parsed['energy']}/10\n_{parsed['notes']}_\nCorrect?"
+                ctx.user_data["pending_emotions"] = {**parsed, "log_date": log_date}
+                date_note = f"\n📅 *Logging for {log_date}*" if log_date else ""
+                msg = f"*Updated:* Mood {parsed['mood']}/10 · Energy {parsed['energy']}/10\n_{parsed['notes']}_{date_note}\nCorrect?"
                 await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("emotions"))
         except Exception as e:
             log.error(traceback.format_exc())
