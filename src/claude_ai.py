@@ -217,6 +217,32 @@ def gym_session_reply(session_lines: list, has_pr: bool) -> str:
 
 # ── Recovery / Sleep ──────────────────────────────────────────────────────────
 
+def parse_sleep(text: str) -> dict:
+    """Parse natural sleep description into hours and quality."""
+    prompt = (
+        "Parse this sleep description and return JSON only:\n"
+        '{"hours": <total sleep hours as float>, "quality": <1-5 int>, "notes": "<one line summary>"}\n\n'
+        "Rules:\n"
+        "- Calculate TOTAL sleep by adding up all sleep periods\n"
+        "- quality 1=terrible, 2=poor, 3=ok, 4=good, 5=great\n"
+        "- Infer quality from context (interrupted sleep, mosquitoes, restless = low)\n"
+        "- If times given, calculate duration mathematically\n\n"
+        f"Message: {text}\n\n"
+        "Reply with JSON only."
+    )
+    raw = _call(prompt, max_tokens=80)
+    start, end = raw.find("{"), raw.rfind("}") + 1
+    try:
+        data = json.loads(raw[start:end])
+        return {
+            "hours": float(data.get("hours", 6)),
+            "quality": max(1, min(5, int(data.get("quality", 3)))),
+            "notes": data.get("notes", ""),
+        }
+    except Exception:
+        return {"hours": 6.0, "quality": 3, "notes": text}
+
+
 def recovery_reply(hours: float, quality: int, streak: int) -> str:
     prompt = (
         f"Sleep: {hours}h, quality {quality}/5, streak {streak} nights of 7h+.\n\n"

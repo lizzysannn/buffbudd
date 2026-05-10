@@ -405,21 +405,20 @@ async def _log_gym_session(text: str, ctx, reply):
 
 async def _log_recovery(text: str, reply):
     try:
-        numbers = re.findall(r"\d+(?:\.\d+)?", text)
-        if len(numbers) >= 2:
-            hours, quality = float(numbers[0]), int(float(numbers[1]))
-        elif len(numbers) == 1:
-            hours, quality = float(numbers[0]), 3
+        # Shorthand: two numbers like "7.5 4" → hours + quality
+        if re.match(r"^\s*\d+(\.\d+)?\s+[1-5]\s*$", text.strip()):
+            parts = text.strip().split()
+            hours, quality = float(parts[0]), int(parts[1])
         else:
-            await reply("How many hours and quality? e.g. `7.5 4`", parse_mode="Markdown")
-            return
+            # Natural language — let Claude calculate actual sleep duration
+            parsed = claude_ai.parse_sleep(text)
+            hours, quality = parsed["hours"], parsed["quality"]
         quality = max(1, min(5, quality))
         sheets.log_sleep(hours, quality)
         streak = sheets.get_sleep_streak()
         buddy_reply = claude_ai.recovery_reply(hours, quality, streak)
         await reply(buddy_reply)
     except Exception as e:
-        import traceback
         log.error(traceback.format_exc()); await reply(_safe_error(e, "logging"))
 
 
