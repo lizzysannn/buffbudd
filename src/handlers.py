@@ -202,7 +202,7 @@ async def _log_meal_text(text: str, reply, ctx=None, meal_type: str = ""):
         if ctx:
             ctx.user_data["pending_food"] = {"macros": macros, "meal_type": resolved_type, "log_date": log_date}
 
-        date_note = f" _(logged for {log_date})_" if log_date else ""
+        date_note = f"\n📅 *Logging for {log_date}*" if log_date else ""
         msg = _build_food_preview(macros, resolved_type) + date_note
         await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("food"))
     except Exception as e:
@@ -425,7 +425,7 @@ async def _log_gym_session(text: str, ctx, reply):
         ctx.user_data["pending_gym"] = {"results": pending_results, "log_date": log_date}
         buddy_reply = claude_ai.gym_session_reply(lines, has_pr)
         session_summary = "\n".join(lines)
-        date_note = f"\n_(logged for {log_date})_" if log_date else ""
+        date_note = f"\n📅 *Logging for {log_date}*" if log_date else ""
         await reply(
             f"{session_summary}\n\n{buddy_reply}{date_note}",
             parse_mode="Markdown",
@@ -444,7 +444,7 @@ async def _log_recovery(text: str, reply, ctx=None):
         hours, notes = parsed["hours"], parsed.get("notes", "")
         if ctx:
             ctx.user_data["pending_sleep"] = {"hours": hours, "notes": notes, "log_date": log_date}
-        date_note = f"\n_(logged for {log_date})_" if log_date else ""
+        date_note = f"\n📅 *Logging for {log_date}*" if log_date else ""
         msg = f"*Sleep:* {hours}h\n_{notes}_{date_note}\n\nCorrect?" if notes else f"*Sleep:* {hours}h{date_note}\n\nCorrect?"
         await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("sleep"))
     except Exception as e:
@@ -459,7 +459,7 @@ async def _log_emotions(text: str, reply, ctx=None):
         parsed = claude_ai.parse_emotions(text)
         if ctx:
             ctx.user_data["pending_emotions"] = {**parsed, "log_date": log_date}
-        date_note = f"\n_(logged for {log_date})_" if log_date else ""
+        date_note = f"\n📅 *Logging for {log_date}*" if log_date else ""
         msg = (
             f"*Mood:* {parsed['mood']}/10 · *Energy:* {parsed['energy']}/10\n"
             f"_{parsed['notes']}_{date_note}\n\nCorrect?"

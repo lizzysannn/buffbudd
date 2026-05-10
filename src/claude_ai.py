@@ -219,25 +219,36 @@ def gym_session_reply(session_lines: list, has_pr: bool) -> str:
 
 def extract_log_date(text: str) -> str | None:
     """Return ISO date string if message refers to a past day, else None (= today)."""
-    from datetime import date
+    import re
+    from datetime import date, timedelta
     today = date.today()
-    prompt = (
-        f"Today is {today.strftime('%Y-%m-%d')} ({today.strftime('%A')}).\n"
-        "Does this message refer to a specific past date (yesterday, last night, Monday, etc.)?\n"
-        "If yes, reply with just the date in YYYY-MM-DD format.\n"
-        "If it refers to today or no specific date, reply with: today\n\n"
-        f"Message: {text}\n\n"
-        "Reply with YYYY-MM-DD or 'today' only."
-    )
-    raw = _call(prompt, max_tokens=15).strip().lower()
-    if raw == "today" or not raw:
-        return None
-    try:
-        from datetime import date as _date
-        _date.fromisoformat(raw)
-        return raw if raw < today.isoformat() else None
-    except ValueError:
-        return None
+    lower = text.lower()
+
+    # Fast-path regex for common patterns
+    if re.search(r"\byesterday\b|\blast night\b|\blast evening\b", lower):
+        return (today - timedelta(days=1)).isoformat()
+    if re.search(r"\b2 days ago\b|\btwo days ago\b", lower):
+        return (today - timedelta(days=2)).isoformat()
+    if re.search(r"\b3 days ago\b|\bthree days ago\b", lower):
+        return (today - timedelta(days=3)).isoformat()
+
+    # Day-name references — ask Claude
+    if re.search(r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|last \w+)\b", lower):
+        prompt = (
+            f"Today is {today.strftime('%Y-%m-%d')} ({today.strftime('%A')}).\n"
+            "What past date does this message refer to? Reply with YYYY-MM-DD only, or 'today'.\n\n"
+            f"Message: {text}"
+        )
+        raw = _call(prompt, max_tokens=15).strip().lower()
+        if raw == "today" or not raw:
+            return None
+        try:
+            d = date.fromisoformat(raw)
+            return raw if d < today else None
+        except ValueError:
+            return None
+
+    return None
 
 
 # ── Recovery / Sleep ──────────────────────────────────────────────────────────
