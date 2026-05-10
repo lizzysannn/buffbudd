@@ -27,6 +27,9 @@ DEFAULT_PROTEIN = 115   # grams
 DEFAULT_CARBS = 101     # grams
 DEFAULT_FATS = 32       # grams
 
+# Weekly gym target (Mon–Sun)
+DEFAULT_GYM_SESSIONS_WEEK = 3
+
 # Timezone
 TIMEZONE = "Asia/Singapore"
 

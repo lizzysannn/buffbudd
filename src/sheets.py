@@ -229,6 +229,12 @@ def get_week_food() -> list[dict]:
     return [r for r in rows if _norm_date(r.get("Date", "")) >= week_start]
 
 
+def get_week_gym_days() -> int:
+    """Return number of unique gym days this week (Mon–Sun)."""
+    rows = get_week_gym()
+    return len({_norm_date(r.get("Date", "")) for r in rows if r.get("Date")})
+
+
 def get_week_gym() -> list[dict]:
     from datetime import timedelta
     ws = _sheet(SHEET_GYM)

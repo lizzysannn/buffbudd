@@ -17,7 +17,7 @@ from telegram.ext import ContextTypes, CallbackQueryHandler
 from src import sheets, claude_ai
 from src.config import (
     DEFAULT_CALORIES, DEFAULT_PROTEIN, DEFAULT_CARBS, DEFAULT_FATS,
-    TELEGRAM_CHAT_ID,
+    DEFAULT_GYM_SESSIONS_WEEK, TELEGRAM_CHAT_ID,
 )
 
 
@@ -614,10 +614,9 @@ def _build_food_preview(macros: dict, resolved_type: str) -> str:
 
 async def _handle_food_query(text: str, reply):
     try:
+        from datetime import date, timedelta
         log_date = claude_ai.extract_log_date(text)
         if not log_date:
-            # Default to yesterday if no date detected but they're asking about past
-            from datetime import date, timedelta
             log_date = (date.today() - timedelta(days=1)).isoformat()
 
         rows = sheets.get_food_by_date(log_date)
@@ -630,6 +629,7 @@ async def _handle_food_query(text: str, reply):
         total_carbs = sum(float(r.get("Carbs", 0)) for r in rows)
         total_fats = sum(float(r.get("Fats", 0)) for r in rows)
 
+        # Meal breakdown grouped by type
         lines = [f"*{log_date} — what you ate:*\n"]
         current_meal = None
         for r in rows:
@@ -640,6 +640,25 @@ async def _handle_food_query(text: str, reply):
             lines.append(f"• {r.get('Meal', '')} — {r.get('Calories', 0)} cal · {r.get('Protein', 0)}g P")
 
         lines.append(f"\n*Total: {total_cal} cal · {total_pro:.0f}g protein · {total_carbs:.0f}g carbs · {total_fats:.0f}g fat*")
+
+        # Gap vs targets
+        cal_gap = DEFAULT_CALORIES - total_cal
+        pro_gap = DEFAULT_PROTEIN - total_pro
+        lines.append("\n*vs targets:*")
+        lines.append(f"Calories: {total_cal} / {DEFAULT_CALORIES} ({'under by ' + str(abs(int(cal_gap))) if cal_gap > 0 else 'over by ' + str(abs(int(cal_gap)))})")
+        lines.append(f"Protein: {total_pro:.0f}g / {DEFAULT_PROTEIN}g ({'under by ' + str(abs(int(pro_gap))) + 'g' if pro_gap > 0 else 'hit ✅' if pro_gap == 0 else 'over by ' + str(abs(int(pro_gap))) + 'g'})")
+
+        # Weekly gym progress
+        today = date.today()
+        days_left = 6 - today.weekday()  # weekday(): Mon=0, Sun=6. Days left after today until Sun.
+        gym_done = sheets.get_week_gym_days()
+        gym_needed = max(0, DEFAULT_GYM_SESSIONS_WEEK - gym_done)
+        lines.append(f"\n*Gym this week:* {gym_done} / {DEFAULT_GYM_SESSIONS_WEEK} sessions")
+        if gym_needed == 0:
+            lines.append("Weekly gym target hit ✅")
+        else:
+            lines.append(f"{gym_needed} more session{'s' if gym_needed > 1 else ''} needed · {days_left} day{'s' if days_left != 1 else ''} left this week")
+
         await reply("\n".join(lines), parse_mode="Markdown")
     except Exception as e:
         log.error(traceback.format_exc()); await reply(_safe_error(e, "food query"))
@@ -685,9 +704,18 @@ async def cmd_summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     gym = sheets.get_today_gym()
     cycle_day, phase = sheets.get_cycle_info()
 
-    sleep_str = f"{sleep['Hours']}h quality {sleep['Quality']}/5" if sleep else "Not logged"
-    gym_str = f"{len(gym)} sets" if gym else "Rest day"
+    from datetime import date as _date
+    sleep_str = f"{sleep['Hours']}h · {sleep['Quality']}" if sleep and sleep.get('Quality') else (f"{sleep['Hours']}h" if sleep else "Not logged")
+    gym_str = f"{len(gym)} sets today" if gym else "Rest day"
     cycle_str = f"Day {cycle_day} · {phase}" if cycle_day else "—"
+    gym_week = sheets.get_week_gym_days()
+    gym_needed = max(0, DEFAULT_GYM_SESSIONS_WEEK - gym_week)
+    days_left = 6 - _date.today().weekday()
+    gym_week_str = f"{gym_week} / {DEFAULT_GYM_SESSIONS_WEEK} sessions this week"
+    if gym_needed > 0:
+        gym_week_str += f" · {gym_needed} more needed · {days_left}d left"
+    else:
+        gym_week_str += " ✅"
 
     msg = (
         "*The Scoreboard*\n"
@@ -696,6 +724,7 @@ async def cmd_summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"Carbs: {totals['carbs']:.0f}g · Fats: {totals['fats']:.0f}g\n"
         f"Sleep: {sleep_str}\n"
         f"Training: {gym_str}\n"
+        f"Gym week: {gym_week_str}\n"
         f"Cycle: {cycle_str}"
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
