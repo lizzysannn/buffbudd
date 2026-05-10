@@ -251,6 +251,20 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data.pop("muscle_suggestions", None)
         await query.edit_message_text("Got it — no changes to catalogue.")
 
+    # ── Stats date confirm / pick ─────────────────────────────────────────────
+    elif data == "confirm_stats_date":
+        log_date = ctx.user_data.pop("pending_stats_date", None)
+        await query.edit_message_reply_markup(reply_markup=None)
+        if log_date:
+            await _fetch_and_show_stats(log_date, query.message.reply_text)
+        else:
+            await query.message.reply_text("Lost the date — try again.")
+
+    elif data == "pick_stats_date":
+        ctx.user_data.pop("pending_stats_date", None)
+        await query.edit_message_text("Which day? (e.g. last Monday, May 5, 3 days ago)")
+        ctx.user_data["awaiting_menu_log"] = "pick_day"
+
     # ── Main menu callbacks ───────────────────────────────────────────────────
     elif data.startswith("menu_"):
         action = data[5:]  # strip "menu_"
@@ -281,10 +295,12 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await _log_period("period started", reply, bot=ctx.bot, chat_id=TELEGRAM_CHAT_ID)
 
         elif action == "today":
-            await _handle_stats_query("stats for today", reply)
+            from datetime import date as _dt
+            await _fetch_and_show_stats(_dt.today().isoformat(), reply)
 
         elif action == "yesterday":
-            await _handle_stats_query("stats for yesterday", reply)
+            from datetime import date as _dt, timedelta
+            await _fetch_and_show_stats((_dt.today() - timedelta(days=1)).isoformat(), reply)
 
         elif action == "week":
             await _handle_week_stats(reply)
@@ -998,7 +1014,7 @@ async def _handle_food_query(text: str, reply):
 
 # ── Stats / summary query ─────────────────────────────────────────────────────
 
-async def _handle_stats_query(text: str, reply):
+async def _handle_stats_query(text: str, reply, ctx=None, skip_confirm: bool = False):
     """Full daily or weekly summary — food + gym + sleep + body."""
     try:
         from datetime import date, timedelta
@@ -1011,15 +1027,38 @@ async def _handle_stats_query(text: str, reply):
             await _handle_week_stats(reply)
             return
 
-        # Determine target date
+        # Determine target date — flexible yesterday matching
         log_date = claude_ai.extract_log_date(text)
         if not log_date:
-            # "today" or unspecified → show today
-            if _re.search(r"\byesterday\b", lower):
+            if _re.search(r"\byesterday", lower) or _re.search(r"\byest\b", lower):
                 log_date = (date.today() - timedelta(days=1)).isoformat()
             else:
                 log_date = date.today().isoformat()
 
+        # ── Confirm date before fetching ─────────────────────────────────────
+        if not skip_confirm:
+            d_obj = date.fromisoformat(log_date)
+            date_fmt = d_obj.strftime("%a, %d %b")
+            if ctx:
+                ctx.user_data["pending_stats_date"] = log_date
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton(f"✅ {date_fmt}", callback_data="confirm_stats_date"),
+                InlineKeyboardButton("📅 Different day", callback_data="pick_stats_date"),
+            ]])
+            await reply(f"Pulling stats for *{date_fmt}* — right?",
+                        parse_mode="Markdown", reply_markup=keyboard)
+            return
+
+        await _fetch_and_show_stats(log_date, reply)
+
+    except Exception as e:
+        log.error(traceback.format_exc()); await reply(_safe_error(e, "stats query"))
+
+
+async def _fetch_and_show_stats(log_date: str, reply):
+    """Fetch and display the full daily summary for a given date."""
+    try:
+        from datetime import date, timedelta
         food_rows = sheets.get_food_by_date(log_date)
         gym_rows  = sheets.get_gym_by_date(log_date)
         sleep_row = sheets.get_sleep_by_date(log_date)
@@ -1102,7 +1141,7 @@ async def _handle_stats_query(text: str, reply):
         await reply("\n".join(lines), parse_mode="Markdown")
 
     except Exception as e:
-        log.error(traceback.format_exc()); await reply(_safe_error(e, "stats query"))
+        log.error(traceback.format_exc()); await reply(_safe_error(e, "stats fetch"))
 
 
 async def _handle_week_stats(reply):
