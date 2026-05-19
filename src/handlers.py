@@ -591,15 +591,23 @@ async def _show_gym_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE, set_nam
             ctx.user_data["gym_exercises"] = exercises
             ctx.user_data["gym_set_name"] = set_name
             ctx.user_data["awaiting_gym_results"] = True
-            lines = [f"*{set_name}*"]
+            _CARDIO_NAMES = {"stairmaster", "treadmill", "running", "cycling", "bike",
+                             "rowing", "elliptical", "walk", "hiit", "skip", "skipping"}
+            lines = [f"*{set_name}* — log when done\n"]
             for i, ex in enumerate(exercises, 1):
-                name = ex.get("Exercise Name", "")
-                last_w = ex.get("Last Weight (kg)", "")
-                line = f"{i}. {name}"
-                if last_w:
-                    line += f" — last {last_w}kg"
+                name    = ex.get("Exercise Name", "")
+                muscle  = ex.get("Muscle Group", "")
+                last_w  = ex.get("Last Weight (kg)", "")
+                is_cardio = any(c in name.lower() for c in _CARDIO_NAMES)
+                line = f"{i}. *{name}*"
+                if muscle:
+                    line += f" — _{muscle}_"
+                if is_cardio:
+                    line += " · ⏱ cardio (log time)"
+                elif last_w:
+                    line += f" · last {last_w}kg"
                 lines.append(line)
-            lines.append("\nLog when done:")
+            lines.append("\n_Default: 3 sets each. Just tell me weights + any changes._")
             await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
         else:
             ctx.user_data["awaiting_gym_results"] = True
@@ -632,21 +640,30 @@ async def _log_gym_session(text: str, ctx, reply):
             for r in results:
                 pending_results.append(r)
                 if r.get("skipped"):
-                    lines.append(f"{r['number']}. {r['exercise']} — skipped")
-                    continue
-                w = r["weight_kg"]
-                last = sheets.get_last_session(r["exercise"])
-                entry = f"{r['number']}. {r['exercise']} — {w}kg {r['sets']}x{r['reps']}"
-                if r.get("rpe"):
-                    entry += f" RPE {r['rpe']}"
-                if last and float(last.get("Weight", 0)) > 0:
-                    prev = float(last.get("Weight", 0))
-                    if w > prev:
-                        entry += f" 🔺 +{w - prev}kg"
-                        has_pr = True
-                    elif w < prev:
-                        entry += f" ↓ was {prev}kg"
-                lines.append(entry)
+                    continue  # don't show skipped exercises in summary
+                ex_type = str(r.get("type", "strength")).lower()
+                if ex_type == "cardio":
+                    dur = int(r.get("duration_min", 0) or 0)
+                    entry = f"• {r['exercise']} — {dur}min"
+                    if r.get("notes"):
+                        entry += f" _{r['notes']}_"
+                    lines.append(entry)
+                else:
+                    w = r["weight_kg"]
+                    last = sheets.get_last_session(r["exercise"])
+                    sets = r.get("sets", 3) or 3
+                    reps = r.get("reps", 0)
+                    entry = f"• {r['exercise']} — {w}kg {sets}x{reps}"
+                    if r.get("rpe"):
+                        entry += f" RPE {r['rpe']}"
+                    if last and float(last.get("Weight", 0)) > 0:
+                        prev = float(last.get("Weight", 0))
+                        if w > prev:
+                            entry += f" 🔺 +{w - prev}kg"
+                            has_pr = True
+                        elif w < prev:
+                            entry += f" ↓ was {prev}kg"
+                    lines.append(entry)
         else:
             parsed = claude_ai.parse_gym_entry(text)
             pending_results.append({**parsed, "weight_kg": parsed["weight"], "skipped": False})

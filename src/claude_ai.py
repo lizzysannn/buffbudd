@@ -238,12 +238,14 @@ def parse_session_results(exercise_list: list, user_input: str) -> list:
         "Match input to exercise list. Reply as JSON array only:\n"
         '[{"number":1,"exercise":"name","weight_kg":0,"sets":0,"reps":0,"rpe":null,"skipped":false,"notes":"","type":"strength","duration_min":0}]\n\n'
         "Rules:\n"
-        "- Match by number or name. If not mentioned set skipped:true. weight_kg=0 for bodyweight.\n"
+        "- ONLY include exercises the user explicitly mentioned. If an exercise from the list is NOT mentioned by the user, set skipped:true.\n"
+        "- Default sets=3 if the user mentions an exercise but doesn't specify sets.\n"
+        "- weight_kg=0 for bodyweight exercises. reps=0 if not specified.\n"
         "- For cardio (treadmill, stairmaster, stair master, cycling, rowing, elliptical, running, walking, HIIT, bike): "
-        "set type=cardio, sets/reps/weight=0. ALWAYS extract duration_min from the user's text (e.g. '20 min', '30 minutes', 'Level 5 20min' → duration_min=20). Never leave duration_min=0 for cardio.\n"
+        "set type=cardio, sets=0, reps=0, weight_kg=0. ALWAYS extract duration_min from the user's text (e.g. '20 min', '30 minutes', 'Level 5 20min' → duration_min=20). Never leave duration_min=0 for cardio.\n"
+        "- Put the full user description (e.g. '20 min, Level 5') in the notes field for cardio entries.\n"
         "- For strength: type=strength, duration_min=0.\n"
-        "- Also include any cardio mentioned that is NOT in the exercise list — add it as an extra entry with number=0.\n"
-        "- Put the full user description (e.g. '20 min, Level 5') in the notes field for cardio entries."
+        "- Also include any cardio mentioned that is NOT in the exercise list — add it as an extra entry with number=0."
     )
     text = _call(prompt, max_tokens=800)
     start = text.find("[")
