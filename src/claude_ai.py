@@ -463,11 +463,12 @@ def body_checkin_reply(weight_kg: float | None, bmi: float | None, tags: list, n
     bmi_str = f"BMI {bmi}" if bmi else "no weight logged"
     tags_str = ", ".join(tags) if tags else "no tags"
     prompt = (
-        f"Body check-in: {bmi_str}. Feel: {tags_str}. Notes: {notes or 'none'}.\n\n"
+        f"Body check-in: {bmi_str}. Feel: {tags_str}. Notes/reflection: {notes or 'none'}.\n\n"
         "Give a Buff Buddy reply. Max 2 lines. Calm, read-the-room tone. "
-        "If she feels strong → brief acknowledgement. If lethargic/stressed → steady, no toxic positivity."
+        "If she feels strong → brief acknowledgement. If lethargic/stressed → steady, no toxic positivity. "
+        "If she wrote a reflection on yesterday (e.g. skipped protein, overate sugar) → briefly acknowledge it and tie it to today."
     )
-    return _call(prompt, max_tokens=100)
+    return _call(prompt, max_tokens=120)
 
 
 # ── Coaching ──────────────────────────────────────────────────────────────────

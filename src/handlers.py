@@ -769,9 +769,13 @@ async def _log_body_checkin(text: str, reply, ctx=None):
         if tags:
             lines.append(f"🏷 Feel: {' · '.join(tags)}")
         if notes:
-            lines.append(f"📝 _{notes}_")
+            lines.append(f"📝 *Notes:* _{notes}_")
         if not weight and not tags:
-            await reply("What did you want to log? Tell me your weight (e.g. 52.3kg) and/or how you feel.")
+            await reply(
+                "What did you want to log? Tell me your weight (e.g. 52.3kg) and/or how you feel.\n"
+                "_You can also add notes — e.g. '52.3kg, shouldn't have skipped protein yesterday'_",
+                parse_mode="Markdown",
+            )
             return
 
         lines.append("\nCorrect?")
@@ -918,7 +922,13 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if intent == "meal":
         await _log_meal_text(text, reply, ctx=ctx)
     elif intent == "gym":
-        await _show_gym_list(update, ctx, set_name_hint=text)
+        # If message already contains exercise data (weights/reps/time) → log directly
+        # like food, no need to open a session first
+        _HAS_EXERCISE_DATA = re.compile(r'\d+\s*(kg|x\d|min\b|lbs|reps?)', re.IGNORECASE)
+        if _HAS_EXERCISE_DATA.search(text):
+            await _log_gym_session(text, ctx, reply)
+        else:
+            await _show_gym_list(update, ctx, set_name_hint=text)
     elif intent == "recovery":
         await _log_recovery(text, reply, ctx=ctx)
     elif intent == "emotions":
@@ -1593,13 +1603,31 @@ async def _handle_quest_check(reply):
 async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not _is_authorised(update):
         return await _deny(update)
-    # No image analysis — just prompt for a text description
     caption = (update.message.caption or "").strip()
+    reply = update.message.reply_text
+
     if caption:
-        # Caption provided — treat it as a meal description directly
-        await _log_meal_text(caption, update.message.reply_text, ctx=ctx)
+        # Route by caption intent — photo could be food, gym, body, etc.
+        from src.router import classify_intent
+        intent = classify_intent(caption)
+        if intent == "meal":
+            await _log_meal_text(caption, reply, ctx=ctx)
+        elif intent == "gym":
+            _HAS_EXERCISE_DATA = re.compile(r'\d+\s*(kg|x\d|min\b|lbs|reps?)', re.IGNORECASE)
+            if _HAS_EXERCISE_DATA.search(caption):
+                await _log_gym_session(caption, ctx, reply)
+            else:
+                await _show_gym_list(update, ctx, set_name_hint=caption)
+        elif intent == "body_check":
+            await _log_body_checkin(caption, reply, ctx=ctx)
+        elif intent == "recovery":
+            await _log_recovery(caption, reply, ctx=ctx)
+        else:
+            # Unknown — show menu so user can pick what to log
+            await reply("What's this for?", reply_markup=_main_menu_keyboard())
     else:
-        await update.message.reply_text("What did you have? Describe it and I'll log the macros.")
+        # No caption — ask what this is about
+        await reply("What's this? Let me know what to log 👇", reply_markup=_main_menu_keyboard())
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────
