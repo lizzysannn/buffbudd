@@ -1,4 +1,4 @@
-"""APScheduler jobs: 8am sleep check-in, 9pm daily summary, Sunday weekly report."""
+"""APScheduler jobs: 8am sleep check-in, 9pm daily nudge, Sunday 9pm weekly report."""
 import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -16,14 +16,16 @@ def build_scheduler(bot: Bot, event_loop: asyncio.AbstractEventLoop | None = Non
         CronTrigger(hour=8, minute=0, timezone=TIMEZONE),
         id="sleep_checkin",
     )
+    # Mon–Sat 9pm: quick nudge about anything not yet logged today
     scheduler.add_job(
-        lambda: asyncio.create_task(_daily_summary(bot)),
-        CronTrigger(hour=21, minute=0, timezone=TIMEZONE),
-        id="daily_summary",
+        lambda: asyncio.create_task(_evening_nudge(bot)),
+        CronTrigger(day_of_week="mon-sat", hour=21, minute=0, timezone=TIMEZONE),
+        id="evening_nudge",
     )
+    # Sunday 9pm: full weekly report
     scheduler.add_job(
         lambda: asyncio.create_task(_weekly_report(bot)),
-        CronTrigger(day_of_week="mon", hour=12, minute=0, timezone=TIMEZONE),
+        CronTrigger(day_of_week="sun", hour=21, minute=0, timezone=TIMEZONE),
         id="weekly_report",
     )
     return scheduler
@@ -37,6 +39,34 @@ async def _sleep_checkin(bot: Bot):
             "Reply with: `hours quality` (quality 1-5)\n"
             "Example: `7.5 4`"
         ),
+        parse_mode="Markdown",
+    )
+
+
+async def _evening_nudge(bot: Bot):
+    """9pm Mon–Sat: nudge about anything not yet logged today."""
+    from datetime import date as _date
+    today = _date.today()
+
+    food  = sheets.get_today_food()
+    sleep = sheets.get_today_sleep()
+    body  = sheets.get_body_by_date(today.isoformat())
+
+    missing = []
+    if not food:
+        missing.append("🍱 food")
+    if not sleep:
+        missing.append("😴 sleep")
+    if not body or (not body.get("Weight (kg)") and not body.get("Body Feel")):
+        missing.append("⚖️ weight / body feel")
+
+    if not missing:
+        return  # everything's logged — no nudge needed
+
+    items = " · ".join(missing)
+    await bot.send_message(
+        chat_id=TELEGRAM_CHAT_ID,
+        text=f"Hey Liz 👋 Still missing: {items}\nLog it before you sleep!",
         parse_mode="Markdown",
     )
 
