@@ -220,10 +220,12 @@ def get_sleep_by_date(date_str: str) -> dict | None:
 
 # ── Sleep Log ─────────────────────────────────────────────────────────────────
 
-def log_sleep(hours: float, notes: str = "", log_date: str = ""):
+def log_sleep(hours: float, notes: str = "", log_date: str = "",
+              sleep_time: str = "", wake_time: str = ""):
     ws = _sheet(SHEET_SLEEP)
     row_date = log_date or date.today().strftime("%Y-%m-%d")
-    ws.append_row([row_date, hours, notes])
+    # Columns: Date · Sleep Time · Wake Time · Hours · Notes
+    ws.append_row([row_date, sleep_time, wake_time, hours, notes])
 
 
 def get_sleep_streak() -> int:
@@ -354,6 +356,63 @@ def get_week_sleep() -> list[dict]:
     today = date.today()
     week_start = _norm_date((today - timedelta(days=today.weekday())).isoformat())
     return [r for r in rows if _norm_date(r.get("Date", "")) >= week_start]
+
+
+def get_strength_exercises_past_weeks(weeks: int = 3) -> list[dict]:
+    """Return unique strength exercises from the last N weeks, most recent weight per exercise.
+
+    Returns list of dicts: {exercise, muscle_group, last_weight, last_date}
+    Ordered by muscle group then exercise name.
+    """
+    from datetime import timedelta
+    ws_gym = _sheet(SHEET_GYM)
+    rows = ws_gym.get_all_records()
+    cutoff = _norm_date((date.today() - timedelta(weeks=weeks)).isoformat())
+
+    # Collect all strength rows in window
+    recent = [
+        r for r in rows
+        if _norm_date(r.get("Date", "")) >= cutoff
+        and str(r.get("Type", "strength")).lower() != "cardio"
+        and r.get("Exercise")
+    ]
+
+    # Per exercise: take the most recent row
+    seen: dict[str, dict] = {}
+    for r in recent:
+        ex = str(r.get("Exercise", "")).strip()
+        if not ex:
+            continue
+        prev = seen.get(ex)
+        if prev is None or _norm_date(r.get("Date", "")) > _norm_date(prev.get("Date", "")):
+            seen[ex] = r
+
+    # Enrich with muscle group from catalogue
+    try:
+        cat_rows = get_exercise_catalogue()
+        cat_map = {str(r.get("Exercise Name", "")).lower(): r for r in cat_rows}
+    except Exception:
+        cat_map = {}
+
+    result = []
+    for ex, r in seen.items():
+        cat = cat_map.get(ex.lower(), {})
+        muscle = str(cat.get("Muscle Group", "") or r.get("Notes", "")).strip()
+        w = r.get("Weight", "") or r.get("weight_kg", "")
+        try:
+            w = float(w) if w else 0
+        except (ValueError, TypeError):
+            w = 0
+        result.append({
+            "exercise": ex,
+            "muscle_group": muscle,
+            "last_weight": w,
+            "last_date": r.get("Date", ""),
+        })
+
+    # Sort by muscle group then name
+    result.sort(key=lambda x: (x["muscle_group"].lower(), x["exercise"].lower()))
+    return result
 
 
 def get_week_gym_days() -> int:

@@ -241,17 +241,31 @@ async def _weekly_report(bot: Bot):
     # ── Gym + Cardio ──────────────────────────────────────────────────────────
     from src.config import DEFAULT_GYM_SESSIONS_WEEK, DEFAULT_CARDIO_SESSIONS_WEEK, DEFAULT_CARDIO_MIN
     from collections import defaultdict
-    gym_days = len({r.get("Date") for r in gym if r.get("Date")})
-    gym_hit = gym_days >= DEFAULT_GYM_SESSIONS_WEEK
+    import re as _re
+    _dur_re = _re.compile(r'(\d+)\s*min', _re.IGNORECASE)
 
-    # Count cardio sessions ≥ DEFAULT_CARDIO_MIN minutes
+    strength_days = set()
     day_cardio: dict[str, int] = defaultdict(int)
     for r in gym:
-        if str(r.get("Type", "")).lower() == "cardio":
+        d = r.get("Date", "")
+        if not d:
+            continue
+        rtype = str(r.get("Type", "strength")).lower()
+        if rtype == "cardio":
             try:
-                day_cardio[r.get("Date", "")] += int(r.get("Duration (min)", 0) or 0)
+                dur = int(r.get("Duration (min)", 0) or 0)
+                if dur == 0:
+                    m = _dur_re.search(str(r.get("Notes", "")))
+                    if m:
+                        dur = int(m.group(1))
+                day_cardio[d] += dur
             except (ValueError, TypeError):
                 pass
+        else:
+            strength_days.add(d)
+
+    gym_days = len(strength_days)
+    gym_hit = gym_days >= DEFAULT_GYM_SESSIONS_WEEK
     cardio_sessions = sum(1 for d in day_cardio.values() if d >= DEFAULT_CARDIO_MIN)
     cardio_hit = cardio_sessions >= DEFAULT_CARDIO_SESSIONS_WEEK
 
@@ -259,6 +273,12 @@ async def _weekly_report(bot: Bot):
     sleep_hours = [float(r.get("Hours", 0)) for r in sleep if r.get("Hours")]
     avg_sleep = sum(sleep_hours) / len(sleep_hours) if sleep_hours else 0
     nights_7h = sum(1 for h in sleep_hours if h >= 7)
+    # Per-night breakdown with sleep/wake times if available
+    sleep_by_date = {}
+    for r in sorted(sleep, key=lambda x: x.get("Date", "")):
+        d = r.get("Date", "")
+        if d:
+            sleep_by_date[d] = r
 
     # ── Body / Weight ─────────────────────────────────────────────────────────
     weight_rows = [r for r in body if r.get("Weight (kg)")]
@@ -318,41 +338,120 @@ async def _weekly_report(bot: Bot):
         "top_feel_tags": ", ".join(f"{t} ({c}x)" for t, c in top_tags) if top_tags else "",
     })
 
-    # ── Send message ──────────────────────────────────────────────────────────
-    cal_status     = "✅" if avg_cal <= DEFAULT_CALORIES else f"⚠️ over by {avg_cal - DEFAULT_CALORIES:.0f}"
-    pro_status     = "✅" if avg_pro >= DEFAULT_PROTEIN else f"❌ avg {avg_pro:.0f}g"
-    sugar_status   = "✅" if avg_sugar <= SUGAR_TARGET else f"⚠️ avg {avg_sugar:.1f}g"
-    gym_status     = "✅" if gym_hit else f"❌ {gym_days}/{DEFAULT_GYM_SESSIONS_WEEK}"
-    cardio_status  = "✅" if cardio_hit else f"❌ {cardio_sessions}/{DEFAULT_CARDIO_SESSIONS_WEEK}"
+    # ── 8-week transformation tracker ─────────────────────────────────────────
+    from datetime import date as _dt
+    TRANSFORM_START = _dt(2026, 5, 18)  # Week 1
+    TRANSFORM_WEEKS = 8
+    WEEKLY_CUT = 0.5  # kg per week
+    days_since_start = (prev_sun - TRANSFORM_START).days
+    current_week_num = max(1, min(TRANSFORM_WEEKS, days_since_start // 7 + 1))
 
-    # Build weight line
+    # Get starting weight (first body log on or after transformation start)
+    start_weight_target = None
+    try:
+        from src.config import SHEET_BODY
+        ws_body = sheets._sheet(SHEET_BODY)
+        all_body_rows = ws_body.get_all_records()
+        start_candidates = [
+            r for r in all_body_rows
+            if r.get("Weight (kg)") and sheets._norm_date(r.get("Date", "")) >= sheets._norm_date(TRANSFORM_START.isoformat())
+        ]
+        if start_candidates:
+            start_weight_target = float(start_candidates[0]["Weight (kg)"])
+        elif weight_start or weight_end:
+            start_weight_target = weight_start or weight_end
+    except Exception:
+        start_weight_target = weight_start or weight_end
+
+    target_weight_this_week = None
+    if start_weight_target:
+        target_weight_this_week = round(start_weight_target - (current_week_num - 1) * WEEKLY_CUT, 1)
+
+    # ── Send message ──────────────────────────────────────────────────────────
+    cal_status    = "✅" if avg_cal <= DEFAULT_CALORIES else f"⚠️ +{avg_cal - DEFAULT_CALORIES:.0f} over"
+    pro_status    = "✅" if avg_pro >= DEFAULT_PROTEIN  else f"❌ avg {avg_pro:.0f}g"
+    sugar_status  = "✅" if avg_sugar <= SUGAR_TARGET   else f"⚠️ avg {avg_sugar:.1f}g"
+    gym_status    = "✅" if gym_hit    else f"❌ {gym_days}/{DEFAULT_GYM_SESSIONS_WEEK}"
+    cardio_status = "✅" if cardio_hit else f"❌ {cardio_sessions}/{DEFAULT_CARDIO_SESSIONS_WEEK}"
+
+    # ── Weight / transformation line ─────────────────────────────────────────
     if weight_start and weight_end and len(weight_rows) > 1:
         sign = "+" if weight_change >= 0 else ""
-        weight_line = f"⚖️ Weight: {weight_start}kg → {weight_end}kg ({sign}{weight_change}kg)"
+        weight_line = f"⚖️ *Weight:* {weight_start}kg → {weight_end}kg ({sign}{weight_change}kg)"
     elif weight_end:
-        weight_line = f"⚖️ Weight: {weight_end}kg"
+        weight_line = f"⚖️ *Weight:* {weight_end}kg"
     else:
-        weight_line = "⚖️ Weight: not logged this week"
+        weight_line = "⚖️ *Weight:* not logged this week"
 
     if bf_end:
-        bf_change = f" · BF: {bf_start}% → {bf_end}%" if bf_start and bf_start != bf_end else f" · BF: {bf_end}%"
-        weight_line += bf_change
+        bf_str = f" · BF: {bf_start}% → {bf_end}%" if (bf_start and bf_start != bf_end) else f" · BF: {bf_end}%"
+        weight_line += bf_str
     if sm_end:
         weight_line += f" · Muscle: {sm_end}kg"
 
-    feel_line = ""
-    if top_tags:
-        feel_line = "\n🏷 Body feel: " + " · ".join(f"{t} ({c}x)" for t, c in top_tags)
+    # Transformation progress line
+    transform_line = f"📅 *Week {current_week_num}/{TRANSFORM_WEEKS}* of transformation"
+    if target_weight_this_week and weight_end:
+        diff = round(weight_end - target_weight_this_week, 1)
+        if diff <= 0:
+            transform_line += f" · Target ≤{target_weight_this_week}kg ✅ ({weight_end}kg)"
+        else:
+            transform_line += f" · Target ≤{target_weight_this_week}kg · currently {weight_end}kg (+{diff}kg)"
+    elif target_weight_this_week:
+        transform_line += f" · Target ≤{target_weight_this_week}kg (no weight logged)"
+
+    # ── Sleep per-night breakdown ─────────────────────────────────────────────
+    sleep_lines = []
+    for d, r in sleep_by_date.items():
+        try:
+            h = float(r.get("Hours") or r.get("hours") or 0)
+        except (ValueError, TypeError):
+            h = 0
+        st = str(r.get("Sleep Time", "") or "").strip()
+        wt = str(r.get("Wake Time", "") or "").strip()
+        day_label = _dt.fromisoformat(d).strftime("%a")
+        icon = "✅" if h >= 7 else "⚠️"
+        if st and wt:
+            sleep_lines.append(f"  {day_label}: {st}→{wt} ({h}h) {icon}")
+        else:
+            sleep_lines.append(f"  {day_label}: {h}h {icon}")
+    sleep_detail = "\n".join(sleep_lines) if sleep_lines else "  No sleep logged"
+
+    # ── Calorie + protein per-day breakdown ───────────────────────────────────
+    food_by_day_full: dict[str, dict] = {}
+    for r in food:
+        d = r.get("Date", "")
+        if d not in food_by_day_full:
+            food_by_day_full[d] = {"cal": 0, "pro": 0}
+        food_by_day_full[d]["cal"] += int(r.get("Calories", 0) or 0)
+        food_by_day_full[d]["pro"] += float(r.get("Protein", 0) or 0)
+
+    food_lines = []
+    for d in sorted(food_by_day_full.keys()):
+        v = food_by_day_full[d]
+        day_label = _dt.fromisoformat(d).strftime("%a")
+        cal_icon = "✅" if v["cal"] <= DEFAULT_CALORIES else "⚠️"
+        pro_icon = "✅" if v["pro"] >= DEFAULT_PROTEIN  else "❌"
+        food_lines.append(f"  {day_label}: {v['cal']:.0f}cal {cal_icon} · {v['pro']:.0f}gP {pro_icon}")
+    food_detail = "\n".join(food_lines) if food_lines else "  No food logged"
+
+    feel_str = " · ".join(f"{t} ({c}x)" for t, c in top_tags) if top_tags else "none"
 
     msg = (
         f"*Weekly Report — {week_label}*\n\n"
-        f"🍱 Calories: {avg_cal:.0f} / {DEFAULT_CALORIES} {cal_status}\n"
-        f"💪 Protein: {avg_pro:.0f}g / {DEFAULT_PROTEIN}g {pro_status}\n"
-        f"🍬 Sugar: {avg_sugar:.1f}g / {SUGAR_TARGET:.0f}g {sugar_status}\n"
-        f"🏋️ Gym: {gym_days} / {DEFAULT_GYM_SESSIONS_WEEK} sessions {gym_status}\n"
-        f"🏃 Cardio: {cardio_sessions} / {DEFAULT_CARDIO_SESSIONS_WEEK} sessions (≥{DEFAULT_CARDIO_MIN}min) {cardio_status}\n"
-        f"😴 Sleep: avg {avg_sleep:.1f}h · {nights_7h}/7 nights ≥7h\n"
-        f"{weight_line}{feel_line}\n\n"
+        f"{transform_line}\n"
+        f"{weight_line}\n\n"
+        f"🍱 *Nutrition* (avg {days_with_food} days)\n"
+        f"  Calories: {avg_cal:.0f} / {DEFAULT_CALORIES} {cal_status}\n"
+        f"  Protein: {avg_pro:.0f}g / {DEFAULT_PROTEIN}g {pro_status}\n"
+        f"  Sugar: {avg_sugar:.1f}g / {SUGAR_TARGET:.0f}g {sugar_status}\n"
+        f"{food_detail}\n\n"
+        f"🏋️ *Training*\n"
+        f"  Strength: {gym_days} sessions {gym_status}\n"
+        f"  Cardio: {cardio_sessions} sessions (≥{DEFAULT_CARDIO_MIN}min) {cardio_status}\n\n"
+        f"😴 *Sleep* — avg {avg_sleep:.1f}h · {nights_7h}/{len(sleep_by_date)} nights ≥7h\n"
+        f"{sleep_detail}\n\n"
+        f"🏷 Body feel: {feel_str}\n\n"
         f"*Goal Review*\n_{score_report}_"
     )
     await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="Markdown")

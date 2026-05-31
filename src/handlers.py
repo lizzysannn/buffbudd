@@ -160,7 +160,11 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data == "confirm_sleep":
         pending = ctx.user_data.pop("pending_sleep", None)
         if pending:
-            sheets.log_sleep(pending["hours"], pending.get("notes", ""), pending.get("log_date", ""))
+            sheets.log_sleep(
+                pending["hours"], pending.get("notes", ""), pending.get("log_date", ""),
+                sleep_time=pending.get("sleep_time", ""),
+                wake_time=pending.get("wake_time", ""),
+            )
             streak = sheets.get_sleep_streak()
             buddy_reply = claude_ai.recovery_reply(pending["hours"], pending.get("notes", ""), streak)
             await query.edit_message_text(f"✅ Logged.\n{buddy_reply}")
@@ -349,6 +353,29 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     elif data == "noop":
         pass  # section header buttons — do nothing
+
+    # ── Gym type selection ────────────────────────────────────────────────────
+    elif data.startswith("gym_"):
+        await query.edit_message_reply_markup(reply_markup=None)
+        reply = query.message.reply_text
+
+        if data == "gym_stairmaster":
+            await reply("⏱ How many minutes on the stairmaster/incline?")
+            ctx.user_data["awaiting_menu_log"] = "gym_cardio_time"
+
+        elif data == "gym_revl_cardio":
+            await reply("⏱ What cardio and how long? (e.g. 'treadmill 20min', 'bike 30min')")
+            ctx.user_data["awaiting_menu_log"] = "gym_cardio_time"
+
+        elif data == "gym_revl_strength":
+            await _show_gym_strength_history(reply, set_name="Revl")
+            ctx.user_data["awaiting_gym_results"] = True
+            ctx.user_data["gym_set_name"] = "Revl"
+
+        elif data == "gym_strength":
+            await _show_gym_strength_history(reply, set_name="Gym")
+            ctx.user_data["awaiting_gym_results"] = True
+            ctx.user_data["gym_set_name"] = "Gym"
 
     elif data.startswith("intent_"):
         intent = data.replace("intent_", "")
@@ -572,54 +599,54 @@ async def handle_target_muscle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # ── Gym logging ───────────────────────────────────────────────────────────────
 
+def _gym_type_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏃 Revl — Cardio",         callback_data="gym_revl_cardio"),
+         InlineKeyboardButton("💪 Revl — Strength",       callback_data="gym_revl_strength")],
+        [InlineKeyboardButton("🪜 Gym — Stairmaster/Incline", callback_data="gym_stairmaster"),
+         InlineKeyboardButton("🏋️ Gym — Strength",        callback_data="gym_strength")],
+    ])
+
+
 async def _show_gym_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE, set_name_hint: str = ""):
-    """Show the exercise list and set awaiting_gym_results state."""
+    """Show 4-option gym type menu."""
+    await update.effective_message.reply_text(
+        "What type of session?", reply_markup=_gym_type_keyboard()
+    )
+
+
+async def _show_gym_strength_history(reply, set_name: str = ""):
+    """Show past 3-week strength exercises grouped by muscle, prefilled 3 sets."""
     try:
-        available_sets = sheets.get_available_sets()
-        # If user mentioned a set name, try to match it
-        set_name = ""
-        if set_name_hint:
-            hint_lower = set_name_hint.lower()
-            for s in available_sets:
-                if hint_lower in s.lower() or s.lower() in hint_lower:
-                    set_name = s
-                    break
-        if not set_name:
-            set_name = available_sets[0] if available_sets else "Self Train"
-        exercises = sheets.get_exercises_by_set(set_name)
-        if exercises:
-            ctx.user_data["gym_exercises"] = exercises
-            ctx.user_data["gym_set_name"] = set_name
-            ctx.user_data["awaiting_gym_results"] = True
-            _CARDIO_NAMES = {"stairmaster", "treadmill", "running", "cycling", "bike",
-                             "rowing", "elliptical", "walk", "hiit", "skip", "skipping"}
-            lines = [f"*{set_name}* — log when done\n"]
-            for i, ex in enumerate(exercises, 1):
-                name    = ex.get("Exercise Name", "")
-                muscle  = ex.get("Muscle Group", "")
-                last_w  = ex.get("Last Weight (kg)", "")
-                is_cardio = any(c in name.lower() for c in _CARDIO_NAMES)
-                line = f"{i}. *{name}*"
-                if muscle:
-                    line += f" — _{muscle}_"
-                if is_cardio:
-                    line += " · ⏱ cardio (log time)"
-                elif last_w:
-                    line += f" · last {last_w}kg"
-                lines.append(line)
-            lines.append("\n_Default: 3 sets each. Just tell me weights + any changes._")
-            await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
-        else:
-            ctx.user_data["awaiting_gym_results"] = True
-            await update.effective_message.reply_text(
-                "No exercises in your catalogue yet. Log your session — I'll parse it:\n"
-                "`Bench Press 80kg 3x8, Squat 60kg 4x5`",
+        exercises = sheets.get_strength_exercises_past_weeks(weeks=3)
+        if not exercises:
+            await reply(
+                "No strength sessions in the past 3 weeks yet.\n"
+                "Log your session: e.g. `Cable Row 35kg, Deadlift 52kg`",
                 parse_mode="Markdown",
             )
+            return
+
+        # Group by muscle group
+        from collections import defaultdict
+        by_muscle: dict[str, list] = defaultdict(list)
+        for ex in exercises:
+            muscle = ex["muscle_group"] or "Other"
+            by_muscle[muscle].append(ex)
+
+        lines = ["*Past 3 weeks — copy/edit and send:*\n"]
+        for muscle, exs in sorted(by_muscle.items()):
+            lines.append(f"_{muscle}_")
+            for ex in exs:
+                w = ex["last_weight"]
+                w_str = f"{w}kg" if w else "bodyweight"
+                lines.append(f"• {ex['exercise']} — {w_str} × 3 sets")
+            lines.append("")
+        lines.append("_Edit weights/sets as needed, then send_")
+        await reply("\n".join(lines), parse_mode="Markdown")
     except Exception as e:
         log.error(traceback.format_exc())
-        ctx.user_data["awaiting_gym_results"] = True
-        await update.effective_message.reply_text("Log your gym session:")
+        await reply("Couldn't load exercise history. Log your session manually.")
 
 
 async def _log_gym_session(text: str, ctx, reply):
@@ -696,11 +723,27 @@ async def _log_recovery(text: str, reply, ctx=None):
     try:
         log_date = claude_ai.extract_log_date(text)
         parsed = claude_ai.parse_sleep(text)
-        hours, notes = parsed["hours"], parsed.get("notes", "")
+        hours       = parsed["hours"]
+        notes       = parsed.get("notes", "")
+        sleep_time  = parsed.get("sleep_time", "")
+        wake_time   = parsed.get("wake_time", "")
         if ctx:
-            ctx.user_data["pending_sleep"] = {"hours": hours, "notes": notes, "log_date": log_date}
+            ctx.user_data["pending_sleep"] = {
+                "hours": hours, "notes": notes, "log_date": log_date,
+                "sleep_time": sleep_time, "wake_time": wake_time,
+            }
         date_note = f"\n📅 *Logging for {log_date}*" if log_date else ""
-        msg = f"*Sleep:* {hours}h\n_{notes}_{date_note}\n\nCorrect?" if notes else f"*Sleep:* {hours}h{date_note}\n\nCorrect?"
+        time_str = ""
+        if sleep_time and wake_time:
+            time_str = f"\n🕐 {sleep_time} → {wake_time}"
+        elif sleep_time:
+            time_str = f"\n🕐 Slept {sleep_time}"
+        elif wake_time:
+            time_str = f"\n⏰ Woke {wake_time}"
+        msg = f"*Sleep:* {hours}h{time_str}"
+        if notes:
+            msg += f"\n_{notes}_"
+        msg += f"{date_note}\n\nCorrect?"
         await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("sleep"))
     except Exception as e:
         log.error(traceback.format_exc()); await reply(_safe_error(e, "logging"))
@@ -883,6 +926,9 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await _log_body_checkin(text, reply, ctx=ctx)
         elif mode == "pick_day":
             await _handle_stats_query(text, reply)
+        elif mode == "gym_cardio_time":
+            # User replied with duration (e.g. "20", "20min", "stairmaster 20min")
+            await _log_gym_session(text, ctx, reply)
         return
 
     # Done-for-day always wins — even if gym state is pending

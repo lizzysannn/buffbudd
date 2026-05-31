@@ -346,27 +346,31 @@ def extract_log_date(text: str) -> str | None:
 # ── Recovery / Sleep ──────────────────────────────────────────────────────────
 
 def parse_sleep(text: str) -> dict:
-    """Parse natural sleep description into hours and qualitative notes."""
+    """Parse natural sleep description into hours, sleep/wake times and notes."""
     prompt = (
         "Parse this sleep description and return JSON only:\n"
-        '{"hours": <total sleep hours as float>, "notes": "<capture everything mentioned: dreams, meditation, interruptions, restlessness, anything>"}\n\n'
+        '{"hours": <total sleep hours as float>, "sleep_time": "<HH:MM 24h or empty>", '
+        '"wake_time": "<HH:MM 24h or empty>", "notes": "<everything else mentioned>"}\n\n'
         "Rules:\n"
-        "- Calculate TOTAL sleep by adding up all sleep periods\n"
-        "- If times given, calculate duration mathematically\n"
-        "- notes: copy across every detail they mentioned — don't summarise, just note it all\n\n"
+        "- Calculate TOTAL sleep from times if given (e.g. '11pm to 7am' → hours=8.0, sleep_time='23:00', wake_time='07:00')\n"
+        "- '11:30pm' → '23:30', '12:30am' → '00:30', '7am' → '07:00'\n"
+        "- If only hours given (e.g. '7.5h'), set hours=7.5, leave sleep_time/wake_time empty\n"
+        "- notes: capture everything else — quality, dreams, interruptions, restlessness\n\n"
         f"Message: {text}\n\n"
         "Reply with JSON only."
     )
-    raw = _call(prompt, max_tokens=100)
+    raw = _call(prompt, max_tokens=120)
     start, end = raw.find("{"), raw.rfind("}") + 1
     try:
         data = json.loads(raw[start:end])
         return {
             "hours": float(data.get("hours", 6)),
+            "sleep_time": data.get("sleep_time", ""),
+            "wake_time": data.get("wake_time", ""),
             "notes": data.get("notes", ""),
         }
     except Exception:
-        return {"hours": 6.0, "notes": text}
+        return {"hours": 6.0, "sleep_time": "", "wake_time": "", "notes": text}
 
 
 def recovery_reply(hours: float, notes: str, streak: int) -> str:

@@ -40,7 +40,7 @@
 |---|---|
 | `Food Log` | Date · Time · Meal Type · Meal · Calories · Protein · Carbs · Fats · Sugar (g) · Breakdown |
 | `Gym Log` | Date · Time · Exercise · Sets · Reps · Weight · RPE · Notes · Type · Duration (min) |
-| `Sleep Log` | Date · Hours · Quality |
+| `Sleep Log` | Date · Sleep Time · Wake Time · Hours · Notes |
 | `Weekly Summary` | Week Start · Avg Calories · Avg Protein · Gym Sessions · Avg Sleep · Goal Score · Notes · Weight Start (kg) · Weight End (kg) · Weight Change (kg) · BF Start (%) · BF End (%) · Skeletal Muscle (kg) · Top Feel Tags |
 | `Emotions Log` | Date · Time · Mood (1-10) · Energy (1-10) · Notes · Cycle Day · Phase |
 | `Activity Log` | Date · Activity Type · Duration (mins) · Notes · Cycle Day · Phase |
