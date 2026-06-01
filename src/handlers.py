@@ -968,13 +968,23 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if intent == "meal":
         await _log_meal_text(text, reply, ctx=ctx)
     elif intent == "gym":
-        # If message already contains exercise data (weights/reps/time) → log directly
-        # like food, no need to open a session first
         _HAS_EXERCISE_DATA = re.compile(r'\d+\s*(kg|x\d|min\b|lbs|reps?)', re.IGNORECASE)
+        _IS_CARDIO = re.compile(r'\b(stairmaster|treadmill|incline|cardio|cycling|bike|rowing|elliptical|running)\b', re.IGNORECASE)
         if _HAS_EXERCISE_DATA.search(text):
+            # Has data inline → log directly
             await _log_gym_session(text, ctx, reply)
+        elif _IS_CARDIO.search(text):
+            # Explicitly cardio → show cardio options
+            await update.effective_message.reply_text(
+                "What cardio?", reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🪜 Stairmaster/Incline", callback_data="gym_stairmaster"),
+                     InlineKeyboardButton("🏃 Other cardio", callback_data="gym_revl_cardio")],
+                ])
+            )
         else:
-            await _show_gym_list(update, ctx, set_name_hint=text)
+            # Default: straight to strength history, no menu
+            await _show_gym_strength_history(reply)
+            ctx.user_data["awaiting_gym_results"] = True
     elif intent == "recovery":
         await _log_recovery(text, reply, ctx=ctx)
     elif intent == "emotions":
