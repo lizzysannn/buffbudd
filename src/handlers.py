@@ -1798,6 +1798,19 @@ async def cmd_week(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 
+async def cmd_weeklysummary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Manually trigger the weekly report for the current/previous week."""
+    if not _is_authorised(update):
+        return await _deny(update)
+    await update.message.reply_text("Generating weekly report… ⏳")
+    try:
+        from src.scheduler import _weekly_report
+        await _weekly_report(ctx.bot)
+    except Exception as e:
+        log.error(traceback.format_exc())
+        await update.message.reply_text(_safe_error(e, "weekly report"))
+
+
 async def cmd_goals(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not _is_authorised(update):
         return await _deny(update)
