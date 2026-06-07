@@ -486,10 +486,8 @@ async def _weekly_report(bot: Bot):
 
     strength_lines = []
     for d in sorted(strength_by_day.keys()):
-        exs = strength_by_day[d]
         day_label = _dt.fromisoformat(d).strftime("%a %d")
-        preview = ", ".join(exs[:3]) + (f" +{len(exs)-3} more" if len(exs) > 3 else "")
-        strength_lines.append(f"  {day_label}: {preview}")
+        strength_lines.append(f"  {day_label} 💪")
     strength_detail = "\n".join(strength_lines) if strength_lines else "  No strength sessions"
 
     # ── Per-day cardio breakdown ──────────────────────────────────────────────
