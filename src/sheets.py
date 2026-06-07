@@ -159,7 +159,7 @@ def get_today_totals() -> dict:
 
 # ── Gym Log ───────────────────────────────────────────────────────────────────
 
-def log_gym(exercise: str, sets: int, reps: int, weight: float, rpe: float | None, notes: str = "", log_date: str = "", exercise_type: str = "strength", duration_min: int = 0):
+def log_gym(exercise: str, sets: int, reps: int, weight: float, rpe: float | None, notes: str = "", log_date: str = "", exercise_type: str = "strength", duration_min: int = 0, distance_km: float = 0):
     ws = _sheet(SHEET_GYM)
     now = datetime.now()
     row_date = log_date or now.strftime("%Y-%m-%d")
@@ -173,8 +173,9 @@ def log_gym(exercise: str, sets: int, reps: int, weight: float, rpe: float | Non
         weight,
         rpe if rpe else "",
         notes,
-        exercise_type,   # col I — "strength" or "cardio"
+        exercise_type,            # col I — "strength" or "cardio"
         duration_min if duration_min else "",  # col J — minutes (cardio only)
+        distance_km if distance_km else "",    # col K — km (runs only)
     ])
 
 

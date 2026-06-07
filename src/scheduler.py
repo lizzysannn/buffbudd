@@ -46,6 +46,7 @@ async def _sleep_checkin(bot: Bot):
 async def _evening_nudge(bot: Bot):
     """9pm Mon–Sat: nudge about anything not yet logged today."""
     from datetime import date as _date
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     today = _date.today()
 
     food  = sheets.get_today_food()
@@ -60,15 +61,23 @@ async def _evening_nudge(bot: Bot):
     if not body or (not body.get("Weight (kg)") and not body.get("Body Feel")):
         missing.append("⚖️ weight / body feel")
 
-    if not missing:
-        return  # everything's logged — no nudge needed
+    done_btn = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Done for Day", callback_data="menu_done_day")
+    ]])
 
-    items = " · ".join(missing)
-    await bot.send_message(
-        chat_id=TELEGRAM_CHAT_ID,
-        text=f"Hey Liz 👋 Still missing: {items}\nLog it before you sleep!",
-        parse_mode="Markdown",
-    )
+    if missing:
+        items = " · ".join(missing)
+        await bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=f"Hey Liz 👋 Still missing today: {items}\nLog it before you sleep!",
+            reply_markup=done_btn,
+        )
+    else:
+        await bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text="Everything's logged today 💪 Ready to wrap up?",
+            reply_markup=done_btn,
+        )
 
 
 async def _daily_summary(bot: Bot):

@@ -19,7 +19,9 @@ _SLEEP_RE = re.compile(r"^\s*\d+(\.\d+)?\s+[1-5]\s*$")
 _GYM_RE = re.compile(
     r"\b(gym|gyming|workout|self[\s-]train(ing)?|hit\s+the\s+gym|going\s+to\s+(the\s+)?gym|"
     r"train(ing)?\s+today|today('?s)?\s+(gym|workout|training)|"
-    r"wanna\s+gym|gonna\s+gym|going\s+gym)\b",
+    r"wanna\s+gym|gonna\s+gym|going\s+gym|"
+    r"ran|run(ning)?|morning\s+run|\d+\s*km\s+run|run\s+\d+\s*km|"
+    r"stairmaster|treadmill|incline\s+walk)\b",
     re.IGNORECASE,
 )
 

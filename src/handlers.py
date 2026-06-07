@@ -239,7 +239,8 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         m = _dur_re.search(str(r.get("notes", "")))
                         if m:
                             dur = int(m.group(1))
-                    sheets.log_gym(r["exercise"], r["sets"], r["reps"], w, r.get("rpe"), r.get("notes", ""), log_date, ex_type, dur)
+                    dist = float(r.get("distance_km", 0) or 0)
+                    sheets.log_gym(r["exercise"], r["sets"], r["reps"], w, r.get("rpe"), r.get("notes", ""), log_date, ex_type, dur, distance_km=dist)
                     if w > 0:
                         sheets.update_exercise_weight(r["exercise"], w)
             ctx.user_data.pop("gym_exercises", None)
@@ -670,9 +671,14 @@ async def _log_gym_session(text: str, ctx, reply):
                     continue  # don't show skipped exercises in summary
                 ex_type = str(r.get("type", "strength")).lower()
                 if ex_type == "cardio":
-                    dur = int(r.get("duration_min", 0) or 0)
-                    entry = f"• {r['exercise']} — {dur}min"
-                    if r.get("notes"):
+                    dur  = int(r.get("duration_min", 0) or 0)
+                    dist = float(r.get("distance_km", 0) or 0)
+                    entry = f"• {r['exercise']}"
+                    if dist:
+                        entry += f" — {dist}km"
+                    if dur:
+                        entry += f" · {dur}min"
+                    if r.get("notes") and not dist and not dur:
                         entry += f" _{r['notes']}_"
                     lines.append(entry)
                 else:

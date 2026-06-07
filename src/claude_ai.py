@@ -236,14 +236,15 @@ def parse_session_results(exercise_list: list, user_input: str) -> list:
         f"Exercise list:\n{exercises_str}\n\n"
         f"User logged:\n{user_input}\n\n"
         "Match input to exercise list. Reply as JSON array only:\n"
-        '[{"number":1,"exercise":"name","weight_kg":0,"sets":0,"reps":0,"rpe":null,"skipped":false,"notes":"","type":"strength","duration_min":0}]\n\n'
+        '[{"number":1,"exercise":"name","weight_kg":0,"sets":0,"reps":0,"rpe":null,"skipped":false,"notes":"","type":"strength","duration_min":0,"distance_km":0}]\n\n'
         "Rules:\n"
         "- ONLY include exercises the user explicitly mentioned. If an exercise from the list is NOT mentioned by the user, set skipped:true.\n"
         "- Default sets=3 if the user mentions an exercise but doesn't specify sets.\n"
         "- weight_kg=0 for bodyweight exercises. reps=0 if not specified.\n"
         "- For cardio (treadmill, stairmaster, stair master, cycling, rowing, elliptical, running, walking, HIIT, bike): "
         "set type=cardio, sets=0, reps=0, weight_kg=0. ALWAYS extract duration_min from the user's text (e.g. '20 min', '30 minutes', 'Level 5 20min' → duration_min=20). Never leave duration_min=0 for cardio.\n"
-        "- Put the full user description (e.g. '20 min, Level 5') in the notes field for cardio entries.\n"
+        "- For runs: also extract distance_km (e.g. '5km run', 'ran 5k' → distance_km=5.0). If no distance given, distance_km=0.\n"
+        "- Put the full user description (e.g. '5km run, 28min') in the notes field for cardio entries.\n"
         "- For strength: type=strength, duration_min=0.\n"
         "- Also include any cardio mentioned that is NOT in the exercise list — add it as an extra entry with number=0."
     )
