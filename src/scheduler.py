@@ -456,39 +456,112 @@ async def _weekly_report(bot: Bot):
             sleep_lines.append(f"  {day_label}: {h}h {icon}")
     sleep_detail = "\n".join(sleep_lines) if sleep_lines else "  No sleep logged"
 
-    # ── Calorie + protein per-day breakdown ───────────────────────────────────
-    food_by_day_full: dict[str, dict] = {}
+    # ── Per-day food breakdown ────────────────────────────────────────────────
+    food_by_day: dict[str, dict] = {}
     for r in food:
         d = r.get("Date", "")
-        if d not in food_by_day_full:
-            food_by_day_full[d] = {"cal": 0, "pro": 0}
-        food_by_day_full[d]["cal"] += int(r.get("Calories", 0) or 0)
-        food_by_day_full[d]["pro"] += float(r.get("Protein", 0) or 0)
+        if d not in food_by_day:
+            food_by_day[d] = {"cal": 0, "pro": 0}
+        food_by_day[d]["cal"] += int(r.get("Calories", 0) or 0)
+        food_by_day[d]["pro"] += float(r.get("Protein", 0) or 0)
 
     food_lines = []
-    for d in sorted(food_by_day_full.keys()):
-        v = food_by_day_full[d]
-        day_label = _dt.fromisoformat(d).strftime("%a")
+    for d in sorted(food_by_day.keys()):
+        v = food_by_day[d]
+        day_label = _dt.fromisoformat(d).strftime("%a %d")
         cal_icon = "✅" if v["cal"] <= DEFAULT_CALORIES else "⚠️"
         pro_icon = "✅" if v["pro"] >= DEFAULT_PROTEIN  else "❌"
         food_lines.append(f"  {day_label}: {v['cal']:.0f}cal {cal_icon} · {v['pro']:.0f}gP {pro_icon}")
     food_detail = "\n".join(food_lines) if food_lines else "  No food logged"
 
+    # ── Per-day strength breakdown ────────────────────────────────────────────
+    strength_by_day: dict[str, list] = defaultdict(list)
+    for r in gym:
+        d = r.get("Date", "")
+        rtype = str(r.get("Type", "strength")).lower()
+        ex = str(r.get("Exercise", "")).strip()
+        if rtype != "cardio" and ex and d:
+            if ex not in strength_by_day[d]:
+                strength_by_day[d].append(ex)
+
+    strength_lines = []
+    for d in sorted(strength_by_day.keys()):
+        exs = strength_by_day[d]
+        day_label = _dt.fromisoformat(d).strftime("%a %d")
+        preview = ", ".join(exs[:3]) + (f" +{len(exs)-3} more" if len(exs) > 3 else "")
+        strength_lines.append(f"  {day_label}: {preview}")
+    strength_detail = "\n".join(strength_lines) if strength_lines else "  No strength sessions"
+
+    # ── Per-day cardio breakdown ──────────────────────────────────────────────
+    cardio_by_day: dict[str, list] = defaultdict(list)
+    for r in gym:
+        d = r.get("Date", "")
+        rtype = str(r.get("Type", "")).lower()
+        ex = str(r.get("Exercise", "Cardio")).strip()
+        if rtype == "cardio" and d:
+            try:
+                dur = int(r.get("Duration (min)", 0) or 0)
+                if dur == 0:
+                    m = _dur_re.search(str(r.get("Notes", "")))
+                    if m:
+                        dur = int(m.group(1))
+                dist = float(r.get("Distance (km)", 0) or 0)
+            except (ValueError, TypeError):
+                dur, dist = 0, 0
+            detail = ex
+            if dist:
+                detail += f" {dist}km"
+            if dur:
+                detail += f" {dur}min"
+            cardio_by_day[d].append(detail)
+
+    cardio_lines = []
+    for d in sorted(cardio_by_day.keys()):
+        day_label = _dt.fromisoformat(d).strftime("%a %d")
+        cardio_lines.append(f"  {day_label}: {' · '.join(cardio_by_day[d])}")
+    cardio_detail = "\n".join(cardio_lines) if cardio_lines else "  No cardio sessions"
+
+    # ── Per-day weight progression ────────────────────────────────────────────
+    weight_by_day: dict[str, float] = {}
+    for r in sorted(body, key=lambda x: x.get("Date", "")):
+        d = r.get("Date", "")
+        w = r.get("Weight (kg)", "")
+        if d and w:
+            try:
+                weight_by_day[d] = float(w)
+            except (ValueError, TypeError):
+                pass
+
+    weight_lines = []
+    prev_w = None
+    for d in sorted(weight_by_day.keys()):
+        w = weight_by_day[d]
+        day_label = _dt.fromisoformat(d).strftime("%a %d")
+        if prev_w is not None:
+            delta = round(w - prev_w, 1)
+            arrow = "↓" if delta < 0 else ("↑" if delta > 0 else "→")
+            weight_lines.append(f"  {day_label}: {w}kg ({arrow}{abs(delta)})")
+        else:
+            weight_lines.append(f"  {day_label}: {w}kg")
+        prev_w = w
+    weight_detail = "\n".join(weight_lines) if weight_lines else "  No weight logged"
+
     feel_str = " · ".join(f"{t} ({c}x)" for t, c in top_tags) if top_tags else "none"
 
     msg = (
         f"*Weekly Report — {week_label}*\n\n"
-        f"{transform_line}\n"
-        f"{weight_line}\n\n"
-        f"🍱 *Nutrition* (avg {days_with_food} days)\n"
-        f"  Calories: {avg_cal:.0f} / {DEFAULT_CALORIES} {cal_status}\n"
-        f"  Protein: {avg_pro:.0f}g / {DEFAULT_PROTEIN}g {pro_status}\n"
-        f"  Sugar: {avg_sugar:.1f}g / {SUGAR_TARGET:.0f}g {sugar_status}\n"
+        f"{transform_line}\n\n"
+        f"⚖️ *Weight*\n{weight_detail}\n"
+        f"  _Week total: {f'{weight_change:+.1f}kg' if weight_change is not None else 'n/a'}"
+        f" · Target −{WEEKLY_CUT}kg_\n\n"
+        f"🍱 *Nutrition* — avg {avg_cal:.0f}cal / {avg_pro:.0f}gP\n"
+        f"  _{cal_status} cal · {pro_status} protein · sugar {avg_sugar:.1f}g {sugar_status}_\n"
         f"{food_detail}\n\n"
-        f"🏋️ *Training*\n"
-        f"  Strength: {gym_days} sessions {gym_status}\n"
-        f"  Cardio: {cardio_sessions} sessions (≥{DEFAULT_CARDIO_MIN}min) {cardio_status}\n\n"
-        f"😴 *Sleep* — avg {avg_sleep:.1f}h · {nights_7h}/{len(sleep_by_date)} nights ≥7h\n"
+        f"🏋️ *Strength* — {gym_days} sessions {gym_status}\n"
+        f"{strength_detail}\n\n"
+        f"🏃 *Cardio* — {cardio_sessions} sessions {cardio_status}\n"
+        f"{cardio_detail}\n\n"
+        f"😴 *Sleep* — avg {avg_sleep:.1f}h · {nights_7h}/{len(sleep_by_date) or 7} nights ≥7h\n"
         f"{sleep_detail}\n\n"
         f"🏷 Body feel: {feel_str}\n\n"
         f"*Goal Review*\n_{score_report}_"
