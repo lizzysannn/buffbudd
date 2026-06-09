@@ -121,9 +121,10 @@ def classify_intent(text: str) -> str:
         "- target_muscle: user wants to hit a specific muscle group (e.g. 'I want to hit chest', 'what should I do for legs')\n"
         "- food_query: asking to see specifically what food/meals were logged (e.g. 'what did I eat yesterday', 'show me my meals')\n"
         "- stats_query: asking for overall stats, summary, or results for a day or week (e.g. 'tell me my stats for yesterday', 'give me my summary', 'how did I do this week')\n"
+        "- content: sharing a content idea, reflection, thought about the journey, something she noticed, felt, or experienced that could become a post (e.g. 'i was thinking today about how far i've come', 'content idea:', 'this could be a good post', 'remember when i used to...')\n"
         "- unknown: anything else\n\n"
         f"Message: {text}\n\n"
-        "Reply with exactly one word from: gym, meal, recovery, emotions, period, body_check, add_exercise, create_set, target_muscle, food_query, stats_query, unknown"
+        "Reply with exactly one word from: gym, meal, recovery, emotions, period, body_check, add_exercise, create_set, target_muscle, food_query, stats_query, content, unknown"
     )
     response = _client.messages.create(
         model=CLAUDE_MODEL,
@@ -133,5 +134,5 @@ def classify_intent(text: str) -> str:
     intent = response.content[0].text.strip().lower()
     valid = {"gym", "meal", "recovery", "emotions", "period", "body_check",
              "add_exercise", "create_set", "target_muscle", "food_query", "stats_query",
-             "done_for_day", "unknown"}
+             "done_for_day", "content", "unknown"}
     return intent if intent in valid else "unknown"

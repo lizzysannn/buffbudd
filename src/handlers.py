@@ -21,6 +21,10 @@ from src.config import (
     TELEGRAM_CHAT_ID, HEIGHT_M,
 )
 
+# Transformation start for week number calculation
+from datetime import date as _date_cls
+_TRANSFORM_START = _date_cls(2026, 5, 18)
+
 
 def _is_authorised(update: Update) -> bool:
     return update.effective_chat.id == TELEGRAM_CHAT_ID
@@ -1003,6 +1007,8 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _handle_stats_query(text, reply)
     elif intent == "done_for_day":
         await _handle_done_for_day(reply)
+    elif intent == "content":
+        await _log_content(text, reply)
     elif intent == "body_check":
         await _log_body_checkin(text, reply, ctx=ctx)
     elif intent == "add_exercise":
@@ -1796,6 +1802,95 @@ async def cmd_week(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"Training days: {gym_days}"
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+async def _log_content(text: str, reply):
+    """Log a content idea/thought — auto-classify pillar, angle, week, suggest angle."""
+    try:
+        from datetime import date
+        days_in = (date.today() - _TRANSFORM_START).days
+        week_num = max(1, min(8, days_in // 7 + 1))
+
+        # Auto-classify via Claude
+        parsed = claude_ai.parse_content_idea(text, week_num)
+        pillar          = parsed.get("pillar", "?")
+        angle           = parsed.get("angle", "?")
+        suggested_angle = parsed.get("suggested_angle", "")
+
+        # Confirm week if before or after the 8-week window
+        week_str = f"Week {week_num}" if 1 <= week_num <= 8 else f"Week ? (day {days_in})"
+
+        # Log — raw note stored verbatim
+        sheets.log_content(
+            raw_note=text,
+            week_num=week_str,
+            pillar=pillar,
+            angle=angle,
+            suggested_angle=suggested_angle,
+        )
+
+        await reply(
+            f"📝 *Logged* — {week_str} · {pillar}\n"
+            f"_{angle}_\n\n"
+            f"💡 _{suggested_angle}_",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        log.error(traceback.format_exc())
+        await reply(_safe_error(e, "content log"))
+
+
+async def cmd_content(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Show content log — optionally filter by week or pillar.
+    Usage: /content  /content week 3  /content training  /content transformation
+    """
+    if not _is_authorised(update):
+        return await _deny(update)
+    try:
+        args = " ".join(ctx.args).strip().lower() if ctx.args else ""
+        rows = sheets.get_content_log(limit=100)
+
+        # Filter
+        if args:
+            import re as _re
+            week_match = _re.search(r'week\s*(\d+)', args)
+            if week_match:
+                wk = f"Week {week_match.group(1)}"
+                rows = [r for r in rows if wk.lower() in str(r.get("Week #", "")).lower()]
+            else:
+                # Filter by pillar keyword
+                rows = [r for r in rows if args in str(r.get("Pillar", "")).lower()]
+
+        if not rows:
+            await update.message.reply_text("No content ideas found for that filter.")
+            return
+
+        # Group by week
+        from collections import defaultdict
+        by_week: dict = defaultdict(list)
+        for r in rows:
+            by_week[r.get("Week #", "?")].append(r)
+
+        lines = ["*Content Log*" + (f" — {args}" if args else "") + "\n"]
+        for wk in sorted(by_week.keys()):
+            lines.append(f"*{wk}*")
+            for r in by_week[wk]:
+                d = str(r.get("Date", ""))[:10]
+                pillar = str(r.get("Pillar", ""))
+                angle  = str(r.get("Angle", ""))
+                note   = str(r.get("Raw Note", ""))[:80] + ("…" if len(str(r.get("Raw Note", ""))) > 80 else "")
+                suggestion = str(r.get("Suggested Angle", ""))
+                lines.append(f"  📅 {d} · _{pillar}_")
+                lines.append(f"  {angle}")
+                lines.append(f"  \"{note}\"")
+                if suggestion:
+                    lines.append(f"  💡 {suggestion}")
+                lines.append("")
+
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    except Exception as e:
+        log.error(traceback.format_exc())
+        await update.message.reply_text(_safe_error(e, "content view"))
 
 
 async def cmd_weeklysummary(update: Update, ctx: ContextTypes.DEFAULT_TYPE):

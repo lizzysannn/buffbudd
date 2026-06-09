@@ -47,6 +47,7 @@
 | `Cycle Log` | Date · Cycle Day · Phase · Symptoms · Flow · Notes |
 | `Body Log` | Date · Weight (kg) · Body Fat (%) · Body Feel · Notes |
 | `Exercise Catalogue` | Exercise Name · Muscle Group · Set · Sets · Last Weight (kg) · Last Used · Notes |
+| `Content Log` | Date · Time · Week # · Pillar · Angle · Raw Note · Suggested Angle |
 
 > **Column notes:**
 > - `Gym Log` col I = `Type` (`strength` or `cardio`) · col J = `Duration (min)` (cardio only)

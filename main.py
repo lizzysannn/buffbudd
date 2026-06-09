@@ -10,7 +10,7 @@ from src.config import TELEGRAM_BOT_TOKEN
 from src.handlers import (
     cmd_start, cmd_menu, cmd_summary, cmd_week, cmd_goals, cmd_setgoals,
     cmd_recovery, cmd_streak, cmd_pb, cmd_deletelast, cmd_weight,
-    cmd_weeklysummary,
+    cmd_weeklysummary, cmd_content,
     handle_photo, handle_message, handle_callback,
 )
 from src.scheduler import build_scheduler
@@ -54,6 +54,7 @@ def main():
     app.add_handler(CommandHandler("deletelast", cmd_deletelast))
     app.add_handler(CommandHandler("weight", cmd_weight))
     app.add_handler(CommandHandler("weeklysummary", cmd_weeklysummary))
+    app.add_handler(CommandHandler("content", cmd_content))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(handle_callback))

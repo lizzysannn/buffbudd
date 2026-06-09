@@ -631,3 +631,52 @@ def parse_target_muscle_request(text: str) -> str:
 def generate_motivation_message(trigger: str, context: str) -> str:
     prompt = f"Trigger: {trigger}\nContext: {context}\n\nShort Buff Buddy motivation. 1-2 sentences."
     return _call(prompt, max_tokens=100)
+
+
+# ── Content Log ────────────────────────────────────────────────────────────────
+
+_CONTENT_CONTEXT = """
+Liz is on an 8-week fitness transformation. Content plan has 4 pillars:
+
+PILLAR 1 — Transformation
+  Angle A: Reflection Carousel — mindset shifts, what she's thinking differently about, still struggling with
+  Angle B: Remember When — fears/limiting beliefs that feel different now
+
+PILLAR 2 — Community
+  Angle A: Fitness Dates — trying a class/activity with someone, what she learned
+  Angle B: Short clips from fitness dates — beginner POV, trendy sounds
+
+PILLAR 3 — Training
+  Angle A: Training Plan / Splits — what she's doing each day, session breakdown
+  Angle B: Internal Monologue — POV-style, what she thinks during training, not quitting
+
+PILLAR 4 — Food & Recovery
+  Angle A: Fuelling Performance — what she eats before/after, meals that keep her going
+  Angle B: Recovery Rituals — sunday reset, sleep routine, walks, mobility, rest days
+"""
+
+def parse_content_idea(raw_note: str, week_num: int) -> dict:
+    """Auto-classify a content thought into pillar, angle, and suggested content direction."""
+    prompt = (
+        f"{_CONTENT_CONTEXT}\n"
+        f"Current week of transformation: Week {week_num}\n\n"
+        f"Liz's raw note: \"{raw_note}\"\n\n"
+        "Classify this and reply as JSON only:\n"
+        '{"pillar": "<1|2|3|4> — <Pillar name>", "angle": "<A|B> — <Angle name>", '
+        '"suggested_angle": "<one punchy sentence: how to turn this raw note into a post>"}\n\n'
+        "Rules:\n"
+        "- Pick the single best pillar + angle fit\n"
+        "- suggested_angle: a concrete, specific content direction — not generic. Reference what she actually said.\n"
+        "- If it genuinely fits multiple pillars, pick the most emotionally resonant one\n"
+        "Reply with JSON only."
+    )
+    raw = _call(prompt, max_tokens=200)
+    start, end = raw.find("{"), raw.rfind("}") + 1
+    try:
+        return json.loads(raw[start:end])
+    except Exception:
+        return {
+            "pillar": "?",
+            "angle": "?",
+            "suggested_angle": "Needs manual review",
+        }

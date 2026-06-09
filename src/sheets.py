@@ -10,7 +10,7 @@ from src.config import (
     COACH_NUTRITION_DOC_ID, COACH_TRAINING_DOC_ID, WEEKLY_GOALS_DOC_ID,
     SHEET_FOOD, SHEET_GYM, SHEET_SLEEP, SHEET_SUMMARY,
     SHEET_EMOTIONS, SHEET_ACTIVITY, SHEET_CYCLE, SHEET_CATALOGUE,
-    SHEET_BODY, HEIGHT_M,
+    SHEET_BODY, SHEET_CONTENT, HEIGHT_M,
 )
 
 SCOPES = [
@@ -792,3 +792,23 @@ def get_coach_training() -> str:
 
 def get_weekly_goals() -> str:
     return _read_doc(WEEKLY_GOALS_DOC_ID)
+
+
+# ── Content Log ───────────────────────────────────────────────────────────────
+
+def log_content(raw_note: str, week_num: str, pillar: str, angle: str, suggested_angle: str, log_date: str = ""):
+    """Log a content idea/thought.
+    Columns: Date · Time · Week # · Pillar · Angle · Raw Note · Suggested Angle
+    """
+    ws = _sheet(SHEET_CONTENT)
+    now = datetime.now()
+    row_date = log_date or now.strftime("%Y-%m-%d")
+    row_time = now.strftime("%H:%M")
+    ws.append_row([row_date, row_time, week_num, pillar, angle, raw_note, suggested_angle])
+
+
+def get_content_log(limit: int = 50) -> list[dict]:
+    """Return the most recent content log entries."""
+    ws = _sheet(SHEET_CONTENT)
+    rows = ws.get_all_records()
+    return rows[-limit:] if len(rows) > limit else rows
