@@ -417,9 +417,13 @@ def get_strength_exercises_past_weeks(weeks: int = 3) -> list[dict]:
 
 
 def get_week_gym_days() -> int:
-    """Return number of unique gym days this week (Mon–Sun)."""
+    """Return number of unique days with a strength session this week."""
     rows = get_week_gym()
-    return len({_norm_date(r.get("Date", "")) for r in rows if r.get("Date")})
+    return len({
+        _norm_date(r.get("Date", ""))
+        for r in rows
+        if r.get("Date") and str(r.get("Type", "strength")).lower() != "cardio"
+    })
 
 
 def get_week_cardio_sessions(min_minutes: int = 30) -> int:

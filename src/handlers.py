@@ -361,9 +361,12 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         reply = query.message.reply_text
 
         if data == "gym_strength_revl":
-            # Log immediately — no exercise input needed
             sheets.log_gym("Revl Strength", 0, 0, 0, None, "Strength session", "", "strength", 0)
             await query.edit_message_text("💪 Revl strength session logged. Get some rest, Liz.")
+
+        elif data == "gym_strength_gym":
+            sheets.log_gym("Gym Strength", 0, 0, 0, None, "Strength session", "", "strength", 0)
+            await query.edit_message_text("💪 Gym strength session logged. Get some rest, Liz.")
 
         elif data == "gym_cardio_run":
             await reply("🏃 How far did you run? (e.g. 5km, 6.5km)")
@@ -614,7 +617,8 @@ async def handle_target_muscle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 def _gym_type_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💪 Strength Revl",  callback_data="gym_strength_revl")],
+        [InlineKeyboardButton("💪 Strength Revl",  callback_data="gym_strength_revl"),
+         InlineKeyboardButton("🏋️ Strength Gym",   callback_data="gym_strength_gym")],
         [InlineKeyboardButton("🏃 Cardio Run",     callback_data="gym_cardio_run"),
          InlineKeyboardButton("🪜 Cardio Gym",     callback_data="gym_cardio_gym")],
     ])
