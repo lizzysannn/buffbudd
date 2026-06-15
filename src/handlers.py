@@ -896,12 +896,11 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = (update.message.text or "").strip()
     reply = update.message.reply_text
 
-    # Reflection fast-path — fires before ANY state check (gym state would intercept otherwise)
-    if re.match(r'^\s*(reflection|do\s+better)\b', text, re.IGNORECASE):
-        # Clear any stale gym state so it doesn't linger
+    # Content/reflection/do better fast-path — fires before ANY state check
+    if re.match(r'^\s*(content|reflection|do\s+better)\b', text, re.IGNORECASE):
         ctx.user_data.pop("awaiting_gym_results", None)
         ctx.user_data.pop("awaiting_menu_log", None)
-        await _log_reflection(text, reply)
+        await _log_content(text, reply)
         return
 
     # Fix flow — user is correcting a pending entry before it's logged
@@ -1053,8 +1052,6 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _handle_done_for_day(reply)
     elif intent == "content":
         await _log_content(text, reply)
-    elif intent == "do_better":
-        await _log_reflection(text, reply)
     elif intent == "body_check":
         await _log_body_checkin(text, reply, ctx=ctx)
     elif intent == "add_exercise":

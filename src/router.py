@@ -5,9 +5,9 @@ from src.config import ANTHROPIC_API_KEY, CLAUDE_MODEL
 
 _client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-# Do better / reflection — must fire before gym regex (messages often mention running/training)
-_DO_BETTER_RE = re.compile(
-    r"^\s*(reflection|do\s+better)\b",
+# Content / reflection / do better — must fire before gym regex
+_CONTENT_TRIGGER_RE = re.compile(
+    r"^\s*(content|reflection|do\s+better)\b",
     re.IGNORECASE,
 )
 
@@ -84,9 +84,9 @@ def classify_intent(text: str) -> str:
 
     Uses cheap regex first, then Claude for ambiguous cases.
     """
-    # Fast-path: do better reflection (must be before gym regex)
-    if _DO_BETTER_RE.match(text):
-        return "do_better"
+    # Fast-path: content/reflection/do better (must be before gym regex)
+    if _CONTENT_TRIGGER_RE.match(text):
+        return "content"
 
     # Fast-path: done for the day
     if _DONE_RE.search(text):
