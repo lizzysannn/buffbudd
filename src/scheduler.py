@@ -344,21 +344,6 @@ async def _weekly_report(bot: Bot, week_offset: int = 1):
         tag_counts[t] = tag_counts.get(t, 0) + 1
     top_tags = sorted(tag_counts.items(), key=lambda x: -x[1])[:3]
 
-    # ── Goal score via Claude ─────────────────────────────────────────────────
-    week_data = (
-        f"Avg daily calories: {avg_cal:.0f} (target {DEFAULT_CALORIES})\n"
-        f"Avg daily protein: {avg_pro:.0f}g (target {DEFAULT_PROTEIN}g)\n"
-        f"Avg daily sugar: {avg_sugar:.1f}g (target <{SUGAR_TARGET}g)\n"
-        f"Gym sessions: {gym_days} (target {DEFAULT_GYM_SESSIONS_WEEK})\n"
-        f"Avg sleep: {avg_sleep:.1f}h · Nights ≥7h: {nights_7h}/7\n"
-        f"Food logged: {days_with_food} days"
-    )
-    try:
-        goals_text = sheets.get_weekly_goals()
-        score_report = claude_ai.score_weekly_goals(goals_text, week_data)
-    except Exception:
-        score_report = "Goal scoring unavailable this week."
-
     # ── Log to Weekly Summary sheet ───────────────────────────────────────────
     sheets.log_weekly_summary({
         "week_start": prev_mon.strftime("%Y-%m-%d"),
@@ -367,7 +352,7 @@ async def _weekly_report(bot: Bot, week_offset: int = 1):
         "gym_sessions": gym_days,
         "avg_sleep": f"{avg_sleep:.1f}",
         "goal_score": "",
-        "notes": score_report[:200],
+        "notes": "",
         # Body columns
         "weight_start": f"{weight_start}" if weight_start else "",
         "weight_end": f"{weight_end}" if weight_end else "",
@@ -562,8 +547,7 @@ async def _weekly_report(bot: Bot, week_offset: int = 1):
         f"{cardio_detail}\n\n"
         f"😴 *Sleep* — avg {avg_sleep:.1f}h · {nights_7h}/{len(sleep_by_date) or 7} nights ≥7h\n"
         f"{sleep_detail}\n\n"
-        f"🏷 Body feel: {feel_str}\n\n"
-        f"*Goal Review*\n_{score_report}_"
+        f"🏷 Body feel: {feel_str}"
     )
     await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="Markdown")
 
