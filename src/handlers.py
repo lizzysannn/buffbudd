@@ -896,6 +896,14 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = (update.message.text or "").strip()
     reply = update.message.reply_text
 
+    # Reflection fast-path — fires before ANY state check (gym state would intercept otherwise)
+    if re.match(r'^\s*(reflection|do\s+better)\b', text, re.IGNORECASE):
+        # Clear any stale gym state so it doesn't linger
+        ctx.user_data.pop("awaiting_gym_results", None)
+        ctx.user_data.pop("awaiting_menu_log", None)
+        await _log_reflection(text, reply)
+        return
+
     # Fix flow — user is correcting a pending entry before it's logged
     if ctx.user_data.get("awaiting_fix"):
         fix_type = ctx.user_data.pop("awaiting_fix")
