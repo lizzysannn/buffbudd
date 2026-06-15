@@ -46,11 +46,7 @@ async def _ask_intent(update: Update, text: str):
         ],
         [
             InlineKeyboardButton("😴 Sleep",   callback_data="intent_recovery"),
-            InlineKeyboardButton("💬 Mood",    callback_data="intent_emotions"),
-        ],
-        [
             InlineKeyboardButton("⚖️ Body",    callback_data="intent_body"),
-            InlineKeyboardButton("🔴 Period",  callback_data="intent_period"),
         ],
         # Stats section
         [InlineKeyboardButton("── VIEW ─────────────", callback_data="noop")],
@@ -364,7 +360,21 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_reply_markup(reply_markup=None)
         reply = query.message.reply_text
 
-        if data == "gym_stairmaster":
+        if data == "gym_strength_revl":
+            # Log immediately — no exercise input needed
+            sheets.log_gym("Revl Strength", 0, 0, 0, None, "Strength session", "", "strength", 0)
+            await query.edit_message_text("💪 Revl strength session logged. Get some rest, Liz.")
+
+        elif data == "gym_cardio_run":
+            await reply("🏃 How far did you run? (e.g. 5km, 6.5km)")
+            ctx.user_data["awaiting_menu_log"] = "gym_run_distance"
+
+        elif data == "gym_cardio_gym":
+            await reply("🪜 How long and what? (e.g. '30min stairmaster', '20min incline walk')")
+            ctx.user_data["awaiting_menu_log"] = "gym_cardio_time"
+
+        # Legacy callbacks — kept for safety
+        elif data == "gym_stairmaster":
             await reply("⏱ How many minutes on the stairmaster/incline?")
             ctx.user_data["awaiting_menu_log"] = "gym_cardio_time"
 
@@ -373,14 +383,12 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ctx.user_data["awaiting_menu_log"] = "gym_cardio_time"
 
         elif data == "gym_revl_strength":
-            await _show_gym_strength_history(reply, set_name="Revl")
-            ctx.user_data["awaiting_gym_results"] = True
-            ctx.user_data["gym_set_name"] = "Revl"
+            sheets.log_gym("Revl Strength", 0, 0, 0, None, "Strength session", "", "strength", 0)
+            await query.edit_message_text("💪 Revl strength session logged.")
 
         elif data == "gym_strength":
-            await _show_gym_strength_history(reply, set_name="Gym")
-            ctx.user_data["awaiting_gym_results"] = True
-            ctx.user_data["gym_set_name"] = "Gym"
+            sheets.log_gym("Gym Strength", 0, 0, 0, None, "Strength session", "", "strength", 0)
+            await query.edit_message_text("💪 Gym strength session logged.")
 
     elif data.startswith("intent_"):
         intent = data.replace("intent_", "")
@@ -606,10 +614,9 @@ async def handle_target_muscle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 def _gym_type_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🏃 Revl — Cardio",         callback_data="gym_revl_cardio"),
-         InlineKeyboardButton("💪 Revl — Strength",       callback_data="gym_revl_strength")],
-        [InlineKeyboardButton("🪜 Gym — Stairmaster/Incline", callback_data="gym_stairmaster"),
-         InlineKeyboardButton("🏋️ Gym — Strength",        callback_data="gym_strength")],
+        [InlineKeyboardButton("💪 Strength Revl",  callback_data="gym_strength_revl")],
+        [InlineKeyboardButton("🏃 Cardio Run",     callback_data="gym_cardio_run"),
+         InlineKeyboardButton("🪜 Cardio Gym",     callback_data="gym_cardio_gym")],
     ])
 
 
@@ -936,6 +943,12 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await _log_body_checkin(text, reply, ctx=ctx)
         elif mode == "pick_day":
             await _handle_stats_query(text, reply)
+        elif mode == "gym_run_distance":
+            # User replied with distance e.g. "5km", "6.5"
+            dist_m = re.search(r'(\d+\.?\d*)', text)
+            dist = float(dist_m.group(1)) if dist_m else 0.0
+            sheets.log_gym("Morning Run", 0, 0, 0, None, f"{dist}km run", "", "cardio", 0, distance_km=dist)
+            await reply(f"🏃 {dist}km run logged. Strong work!")
         elif mode == "gym_cardio_time":
             # User replied with duration (e.g. "20", "20min", "stairmaster 20min")
             await _log_gym_session(text, ctx, reply)
@@ -987,8 +1000,8 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Explicitly cardio → show cardio options
             await update.effective_message.reply_text(
                 "What cardio?", reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🪜 Stairmaster/Incline", callback_data="gym_stairmaster"),
-                     InlineKeyboardButton("🏃 Other cardio", callback_data="gym_revl_cardio")],
+                    [InlineKeyboardButton("🏃 Cardio Run",  callback_data="gym_cardio_run"),
+                     InlineKeyboardButton("🪜 Cardio Gym",  callback_data="gym_cardio_gym")],
                 ])
             )
         else:
@@ -1708,11 +1721,7 @@ def _main_menu_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("😴 Log Sleep",      callback_data="menu_log_sleep"),
-            InlineKeyboardButton("💬 Log Mood",       callback_data="menu_log_mood"),
-        ],
-        [
             InlineKeyboardButton("⚖️ Log Body",       callback_data="menu_log_body"),
-            InlineKeyboardButton("🔴 Log Period",     callback_data="menu_log_period"),
         ],
         [
             InlineKeyboardButton("📊 Today",          callback_data="menu_today"),
