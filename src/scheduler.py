@@ -255,18 +255,19 @@ async def _daily_summary(bot: Bot):
     await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="\n".join(lines), parse_mode="Markdown")
 
 
-async def _weekly_report(bot: Bot):
-    """Runs Monday 12pm — summarises the previous Mon–Sun week."""
+async def _weekly_report(bot: Bot, week_offset: int = 1):
+    """Summarises a previous Mon–Sun week. week_offset=1 last week, 2=week before."""
     from datetime import date, timedelta
-    today = date.today()  # Monday
-    prev_mon = today - timedelta(days=7)
-    prev_sun = today - timedelta(days=1)
+    today = date.today()
+    this_mon = today - timedelta(days=today.weekday())
+    prev_mon = this_mon - timedelta(days=7 * week_offset)
+    prev_sun = this_mon - timedelta(days=7 * (week_offset - 1) + 1)
     week_label = f"{prev_mon.strftime('%d %b')} – {prev_sun.strftime('%d %b')}"
 
-    food  = sheets.get_prev_week_food()
-    gym   = sheets.get_prev_week_gym()
-    sleep = sheets.get_prev_week_sleep()
-    body  = sheets.get_prev_week_body()
+    food  = sheets.get_prev_week_food(offset=week_offset)
+    gym   = sheets.get_prev_week_gym(offset=week_offset)
+    sleep = sheets.get_prev_week_sleep(offset=week_offset)
+    body  = sheets.get_prev_week_body(offset=week_offset)
 
     # ── Nutrition ─────────────────────────────────────────────────────────────
     days_with_food = len({r.get("Date") for r in food}) or 1

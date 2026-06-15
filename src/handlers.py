@@ -352,10 +352,15 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         elif action == "done_day":
             await _handle_done_for_day(reply)
 
-        elif action == "weekly_summary":
-            await reply("Generating weekly report… ⏳")
+        elif action == "weekly_summary_1":
+            await reply("Generating last week's report… ⏳")
             from src.scheduler import _weekly_report
-            await _weekly_report(ctx.bot)
+            await _weekly_report(ctx.bot, week_offset=1)
+
+        elif action == "weekly_summary_2":
+            await reply("Generating week before last… ⏳")
+            from src.scheduler import _weekly_report
+            await _weekly_report(ctx.bot, week_offset=2)
 
     elif data == "noop":
         pass  # section header buttons — do nothing
@@ -965,9 +970,11 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # Weekly summary fast-path — catches "weeklysummary", "weekly summary", "/weeklysummary" as text
     if re.search(r"weekly\s*summary|weeklysummary", text, re.IGNORECASE):
-        await reply("Generating weekly report… ⏳")
+        offset = 2 if re.search(r"last\s+last|week\s+before|2\s+weeks?\s+ago", text, re.IGNORECASE) else 1
+        label = "week before last" if offset == 2 else "last week"
+        await reply(f"Generating {label}'s report… ⏳")
         from src.scheduler import _weekly_report
-        await _weekly_report(ctx.bot)
+        await _weekly_report(ctx.bot, week_offset=offset)
         return
 
     # Done-for-day always wins — even if gym state is pending
@@ -1758,8 +1765,11 @@ def _main_menu_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🗓 Pick a Day",     callback_data="menu_pick_day"),
         ],
         [
-            InlineKeyboardButton("🎯 Quest Check",    callback_data="menu_quest"),
-            InlineKeyboardButton("📋 Weekly Summary", callback_data="menu_weekly_summary"),
+            InlineKeyboardButton("🎯 Quest Check",      callback_data="menu_quest"),
+        ],
+        [
+            InlineKeyboardButton("📋 Last Week",        callback_data="menu_weekly_summary_1"),
+            InlineKeyboardButton("📋 Week Before",      callback_data="menu_weekly_summary_2"),
         ],
     ])
 

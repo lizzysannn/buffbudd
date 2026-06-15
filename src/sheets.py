@@ -301,51 +301,45 @@ def get_week_food() -> list[dict]:
     return [r for r in rows if _norm_date(r.get("Date", "")) >= week_start]
 
 
-def get_prev_week_food() -> list[dict]:
-    """Return food rows for the previous Mon–Sun week."""
+def _prev_week_range(offset: int = 1):
+    """Return (prev_mon, prev_sun) strings for week offset. 1=last week, 2=week before."""
     from datetime import timedelta
+    today = date.today()
+    this_mon = today - timedelta(days=today.weekday())
+    prev_mon = _norm_date((this_mon - timedelta(days=7 * offset)).isoformat())
+    prev_sun = _norm_date((this_mon - timedelta(days=7 * (offset - 1) + 1)).isoformat())
+    return prev_mon, prev_sun
+
+
+def get_prev_week_food(offset: int = 1) -> list[dict]:
+    """Return food rows for a previous Mon–Sun week. offset=1 last week, 2=week before."""
     ws = _sheet(SHEET_FOOD)
     rows = ws.get_all_records()
-    today = date.today()
-    this_mon = today - timedelta(days=today.weekday())
-    prev_mon = _norm_date((this_mon - timedelta(days=7)).isoformat())
-    prev_sun = _norm_date((this_mon - timedelta(days=1)).isoformat())
+    prev_mon, prev_sun = _prev_week_range(offset)
     return [r for r in rows if prev_mon <= _norm_date(r.get("Date", "")) <= prev_sun]
 
 
-def get_prev_week_gym() -> list[dict]:
-    """Return gym rows for the previous Mon–Sun week."""
-    from datetime import timedelta
+def get_prev_week_gym(offset: int = 1) -> list[dict]:
+    """Return gym rows for a previous Mon–Sun week."""
     ws = _sheet(SHEET_GYM)
     rows = ws.get_all_records()
-    today = date.today()
-    this_mon = today - timedelta(days=today.weekday())
-    prev_mon = _norm_date((this_mon - timedelta(days=7)).isoformat())
-    prev_sun = _norm_date((this_mon - timedelta(days=1)).isoformat())
+    prev_mon, prev_sun = _prev_week_range(offset)
     return [r for r in rows if prev_mon <= _norm_date(r.get("Date", "")) <= prev_sun]
 
 
-def get_prev_week_body() -> list[dict]:
-    """Return body log rows for the previous Mon–Sun week."""
-    from datetime import timedelta
+def get_prev_week_body(offset: int = 1) -> list[dict]:
+    """Return body log rows for a previous Mon–Sun week."""
     ws = _sheet(SHEET_BODY)
     rows = ws.get_all_records()
-    today = date.today()
-    this_mon = today - timedelta(days=today.weekday())
-    prev_mon = _norm_date((this_mon - timedelta(days=7)).isoformat())
-    prev_sun = _norm_date((this_mon - timedelta(days=1)).isoformat())
+    prev_mon, prev_sun = _prev_week_range(offset)
     return [r for r in rows if prev_mon <= _norm_date(r.get("Date", "")) <= prev_sun]
 
 
-def get_prev_week_sleep() -> list[dict]:
-    """Return sleep rows for the previous Mon–Sun week."""
-    from datetime import timedelta
+def get_prev_week_sleep(offset: int = 1) -> list[dict]:
+    """Return sleep rows for a previous Mon–Sun week."""
     ws = _sheet(SHEET_SLEEP)
     rows = ws.get_all_records()
-    today = date.today()
-    this_mon = today - timedelta(days=today.weekday())
-    prev_mon = _norm_date((this_mon - timedelta(days=7)).isoformat())
-    prev_sun = _norm_date((this_mon - timedelta(days=1)).isoformat())
+    prev_mon, prev_sun = _prev_week_range(offset)
     return [r for r in rows if prev_mon <= _norm_date(r.get("Date", "")) <= prev_sun]
 
 
