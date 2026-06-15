@@ -7,7 +7,7 @@ _client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 # Do better / reflection — must fire before gym regex (messages often mention running/training)
 _DO_BETTER_RE = re.compile(
-    r"^\s*do\s+better\b",
+    r"^\s*(reflection|do\s+better)\b",
     re.IGNORECASE,
 )
 
