@@ -946,7 +946,7 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         elif mode == "body":
             await _log_body_checkin(text, reply, ctx=ctx)
         elif mode == "pick_day":
-            await _handle_stats_query(text, reply)
+            await _handle_stats_query(text, reply, ctx=ctx)
         elif mode == "gym_run_distance":
             # User replied with distance e.g. "5km", "6.5"
             dist_m = re.search(r'(\d+\.?\d*)', text)
@@ -1021,7 +1021,7 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif intent == "food_query":
         await _handle_food_query(text, reply)
     elif intent == "stats_query":
-        await _handle_stats_query(text, reply)
+        await _handle_stats_query(text, reply, ctx=ctx)
     elif intent == "done_for_day":
         await _handle_done_for_day(reply)
     elif intent == "content":
@@ -1260,7 +1260,17 @@ async def _handle_stats_query(text: str, reply, ctx=None, skip_confirm: bool = F
         import re as _re
 
         lower = text.lower()
+        is_full_weekly = bool(_re.search(r"\bweekly\s+summary\b|\bweek(ly)?\s+report\b", lower))
         is_weekly = bool(_re.search(r"\b(this\s+week|weekly|week)\b", lower))
+
+        if is_full_weekly:
+            await reply("Generating weekly report… ⏳")
+            from src.scheduler import _weekly_report
+            if ctx and getattr(ctx, "bot", None):
+                await _weekly_report(ctx.bot)
+            else:
+                await _handle_week_stats(reply)
+            return
 
         if is_weekly:
             await _handle_week_stats(reply)
