@@ -1045,6 +1045,8 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _handle_done_for_day(reply)
     elif intent == "content":
         await _log_content(text, reply)
+    elif intent == "do_better":
+        await _log_reflection(text, reply)
     elif intent == "body_check":
         await _log_body_checkin(text, reply, ctx=ctx)
     elif intent == "add_exercise":
@@ -1887,6 +1889,17 @@ async def _log_content(text: str, reply):
     except Exception as e:
         log.error(traceback.format_exc())
         await reply(_safe_error(e, "content log"))
+
+
+async def _log_reflection(text: str, reply):
+    """Log a do-better / reflection note to Reflection Log sheet."""
+    try:
+        log_date = claude_ai.extract_log_date(text)
+        sheets.log_reflection(text, log_date or "")
+        await reply("📝 Reflection logged. noted, Liz.")
+    except Exception as e:
+        log.error(traceback.format_exc())
+        await reply(_safe_error(e, "reflection log"))
 
 
 async def cmd_content(update: Update, ctx: ContextTypes.DEFAULT_TYPE):

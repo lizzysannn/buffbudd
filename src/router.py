@@ -5,6 +5,12 @@ from src.config import ANTHROPIC_API_KEY, CLAUDE_MODEL
 
 _client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
+# Do better / reflection — must fire before gym regex (messages often mention running/training)
+_DO_BETTER_RE = re.compile(
+    r"^\s*do\s+better\b",
+    re.IGNORECASE,
+)
+
 # Period trigger patterns — detected before Claude to avoid API call
 _PERIOD_RE = re.compile(
     r"\b(period\s+started|got\s+my\s+period|period\s+today|started\s+my\s+period|"
@@ -78,6 +84,10 @@ def classify_intent(text: str) -> str:
 
     Uses cheap regex first, then Claude for ambiguous cases.
     """
+    # Fast-path: do better reflection (must be before gym regex)
+    if _DO_BETTER_RE.match(text):
+        return "do_better"
+
     # Fast-path: done for the day
     if _DONE_RE.search(text):
         return "done_for_day"
@@ -134,5 +144,5 @@ def classify_intent(text: str) -> str:
     intent = response.content[0].text.strip().lower()
     valid = {"gym", "meal", "recovery", "emotions", "period", "body_check",
              "add_exercise", "create_set", "target_muscle", "food_query", "stats_query",
-             "done_for_day", "content", "unknown"}
+             "done_for_day", "content", "do_better", "unknown"}
     return intent if intent in valid else "unknown"

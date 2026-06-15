@@ -10,7 +10,7 @@ from src.config import (
     COACH_NUTRITION_DOC_ID, COACH_TRAINING_DOC_ID, WEEKLY_GOALS_DOC_ID,
     SHEET_FOOD, SHEET_GYM, SHEET_SLEEP, SHEET_SUMMARY,
     SHEET_EMOTIONS, SHEET_ACTIVITY, SHEET_CYCLE, SHEET_CATALOGUE,
-    SHEET_BODY, SHEET_CONTENT, HEIGHT_M,
+    SHEET_BODY, SHEET_CONTENT, SHEET_REFLECTION, HEIGHT_M,
 )
 
 SCOPES = [
@@ -810,3 +810,15 @@ def get_content_log(limit: int = 50) -> list[dict]:
     ws = _sheet(SHEET_CONTENT)
     rows = ws.get_all_records()
     return rows[-limit:] if len(rows) > limit else rows
+
+
+def log_reflection(note: str, log_date: str = "") -> None:
+    """Append a do-better / reflection note to Reflection Log."""
+    from datetime import datetime
+    ws = _sheet(SHEET_REFLECTION)
+    now = datetime.now()
+    ws.append_row([
+        log_date or now.strftime("%Y-%m-%d"),
+        now.strftime("%H:%M"),
+        note,
+    ])
