@@ -352,6 +352,11 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         elif action == "done_day":
             await _handle_done_for_day(reply)
 
+        elif action == "weekly_summary":
+            await reply("Generating weekly report… ⏳")
+            from src.scheduler import _weekly_report
+            await _weekly_report(ctx.bot)
+
     elif data == "noop":
         pass  # section header buttons — do nothing
 
@@ -958,6 +963,13 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await _log_gym_session(text, ctx, reply)
         return
 
+    # Weekly summary fast-path — catches "weeklysummary", "weekly summary", "/weeklysummary" as text
+    if re.search(r"weekly\s*summary|weeklysummary", text, re.IGNORECASE):
+        await reply("Generating weekly report… ⏳")
+        from src.scheduler import _weekly_report
+        await _weekly_report(ctx.bot)
+        return
+
     # Done-for-day always wins — even if gym state is pending
     from src.router import _DONE_RE, _NO_RE
     if _DONE_RE.search(text):
@@ -1260,7 +1272,7 @@ async def _handle_stats_query(text: str, reply, ctx=None, skip_confirm: bool = F
         import re as _re
 
         lower = text.lower()
-        is_full_weekly = bool(_re.search(r"\bweekly\s+summary\b|\bweek(ly)?\s+report\b", lower))
+        is_full_weekly = bool(_re.search(r"\bweekly\s*summary\b|\bweek(ly)?\s+report\b|weeklysummary", lower))
         is_weekly = bool(_re.search(r"\b(this\s+week|weekly|week)\b", lower))
 
         if is_full_weekly:
@@ -1747,6 +1759,7 @@ def _main_menu_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("🎯 Quest Check",    callback_data="menu_quest"),
+            InlineKeyboardButton("📋 Weekly Summary", callback_data="menu_weekly_summary"),
         ],
     ])
 
