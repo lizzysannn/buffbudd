@@ -1535,17 +1535,20 @@ async def _handle_done_for_day(reply):
             lines.append("_Nothing logged today._")
         lines.append("")
 
-        # ── Gym: one line ─────────────────────────────────────────────────────
-        lines.append("🏋️ *Gym*")
-        if gym_rows:
-            strength_rows = [r for r in gym_rows if str(r.get("Type", "strength")).lower() != "cardio"]
-            cardio_rows   = [r for r in gym_rows if str(r.get("Type", "")).lower() == "cardio"]
-            parts = []
-            if strength_rows: parts.append(f"Strength training ✅")
-            if cardio_rows:
-                mins = sum(int(r.get("Duration (min)", 0) or 0) for r in cardio_rows)
-                parts.append(f"{mins}min cardio ✅")
-            lines.append(" · ".join(parts))
+        # ── Strength + Cardio: separate lines ────────────────────────────────
+        strength_rows = [r for r in gym_rows if str(r.get("Type", "strength")).lower() != "cardio"]
+        cardio_rows   = [r for r in gym_rows if str(r.get("Type", "")).lower() == "cardio"]
+        cardio_mins   = sum(int(r.get("Duration (min)", 0) or 0) for r in cardio_rows)
+
+        lines.append("💪 *Strength*")
+        lines.append("✅ Session logged" if strength_rows else "Rest day")
+        lines.append("")
+
+        lines.append("🏃 *Cardio*")
+        if cardio_rows and cardio_mins > 0:
+            lines.append(f"{cardio_mins}min ✅")
+        elif cardio_rows:
+            lines.append("Logged (no duration)")
         else:
             lines.append("Rest day")
         lines.append("")
