@@ -1900,14 +1900,14 @@ async def _log_content(text: str, reply):
 
 
 async def _log_reflection(text: str, reply):
-    """Log a do-better / reflection note to Reflection Log sheet."""
+    """Log a do-better / reflection note to Content Log sheet."""
     try:
         log_date = claude_ai.extract_log_date(text)
         sheets.log_reflection(text, log_date or "")
         await reply("📝 Reflection logged. noted, Liz.")
     except Exception as e:
         log.error(traceback.format_exc())
-        await reply(_safe_error(e, "reflection log"))
+        await reply(f"Reflection error: {type(e).__name__}: {e}")
 
 
 async def cmd_content(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
