@@ -680,3 +680,24 @@ def parse_content_idea(raw_note: str, week_num: int) -> dict:
             "angle": "?",
             "suggested_angle": "Needs manual review",
         }
+
+
+def generate_weekly_reflection(week_label: str, stats: dict) -> str:
+    """Short narrative reflection on the week — what happened, what to do better."""
+    prompt = (
+        f"Write a short end-of-week reflection for Liz. 3-4 sentences max. Honest, warm, direct — Buff Buddy voice.\n\n"
+        f"Week: {week_label}\n"
+        f"Weight: {stats.get('weight_summary', 'not logged')}\n"
+        f"Nutrition: avg {stats.get('avg_cal', '?')}cal / {stats.get('avg_pro', '?')}gP (target {stats.get('cal_target')}cal / {stats.get('pro_target')}gP)\n"
+        f"Days on calorie target: {stats.get('days_cal_ok', '?')}\n"
+        f"Days on protein target: {stats.get('days_pro_ok', '?')}\n"
+        f"Strength sessions: {stats.get('strength_sessions', 0)}/{stats.get('strength_target', 3)}\n"
+        f"Cardio sessions: {stats.get('cardio_sessions', 0)}/{stats.get('cardio_target', 2)}\n"
+        f"Sleep: avg {stats.get('avg_sleep', '?')}h, {stats.get('nights_7h', 0)} nights ≥7h\n\n"
+        "What to reflect on:\n"
+        "- What landed well this week\n"
+        "- What slipped and why (be specific, not generic)\n"
+        "- One clear thing to focus on next week\n\n"
+        "Do NOT use bullet points or headers. Just flowing honest sentences. Keep it under 60 words."
+    )
+    return _call(prompt, max_tokens=150, system=BUFF_BUDDY_SYSTEM)

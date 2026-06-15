@@ -532,6 +532,27 @@ async def _weekly_report(bot: Bot, week_offset: int = 1):
 
     feel_str = " · ".join(f"{t} ({c}x)" for t, c in top_tags) if top_tags else "none"
 
+    # ── Weekly reflection ─────────────────────────────────────────────────────
+    days_cal_ok = sum(1 for v in food_by_day.values() if v["cal"] <= DEFAULT_CALORIES)
+    days_pro_ok = sum(1 for v in food_by_day.values() if v["pro"] >= DEFAULT_PROTEIN)
+    weight_summary = (
+        f"{weight_start}kg → {weight_end}kg ({weight_change:+.1f}kg)" if weight_change is not None
+        else (f"{weight_end}kg" if weight_end else "not logged")
+    )
+    try:
+        reflection = claude_ai.generate_weekly_reflection(week_label, {
+            "weight_summary": weight_summary,
+            "avg_cal": f"{avg_cal:.0f}", "avg_pro": f"{avg_pro:.0f}",
+            "cal_target": DEFAULT_CALORIES, "pro_target": DEFAULT_PROTEIN,
+            "days_cal_ok": f"{days_cal_ok}/{len(food_by_day)}",
+            "days_pro_ok": f"{days_pro_ok}/{len(food_by_day)}",
+            "strength_sessions": gym_days, "strength_target": DEFAULT_GYM_SESSIONS_WEEK,
+            "cardio_sessions": cardio_sessions, "cardio_target": DEFAULT_CARDIO_SESSIONS_WEEK,
+            "avg_sleep": f"{avg_sleep:.1f}", "nights_7h": nights_7h,
+        })
+    except Exception:
+        reflection = "Keep building. Every week is data."
+
     msg = (
         f"*Weekly Report — {week_label}*\n\n"
         f"{transform_line}\n\n"
@@ -547,7 +568,8 @@ async def _weekly_report(bot: Bot, week_offset: int = 1):
         f"{cardio_detail}\n\n"
         f"😴 *Sleep* — avg {avg_sleep:.1f}h · {nights_7h}/{len(sleep_by_date) or 7} nights ≥7h\n"
         f"{sleep_detail}\n\n"
-        f"🏷 Body feel: {feel_str}"
+        f"🏷 Body feel: {feel_str}\n\n"
+        f"_{reflection}_"
     )
     await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="Markdown")
 
