@@ -46,7 +46,6 @@ SHEET_CYCLE = "Cycle Log"
 SHEET_CATALOGUE = "Exercise Catalogue"
 SHEET_BODY = "Body Log"
 SHEET_CONTENT = "Content Log"
-SHEET_REFLECTION = "Reflection Log"
 
 # Body metrics
 HEIGHT_M = 1.64  # metres — used for BMI calculation
