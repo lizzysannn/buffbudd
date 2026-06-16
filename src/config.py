@@ -50,4 +50,4 @@ SHEET_CONTENT = "Content Log"
 # Body metrics
 HEIGHT_M = 1.64  # metres — used for BMI calculation
 
-CLAUDE_MODEL = "claude-sonnet-4-20250514"
+CLAUDE_MODEL = "claude-sonnet-4-6"
