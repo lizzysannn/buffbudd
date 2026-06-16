@@ -1051,12 +1051,9 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Has data inline → log directly
             await _log_gym_session(text, ctx, reply)
         elif _IS_CARDIO.search(text):
-            # Explicitly cardio → show cardio options
+            # Explicitly cardio → show full gym type menu
             await update.effective_message.reply_text(
-                "What cardio?", reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🏃 Cardio Run",  callback_data="gym_cardio_run"),
-                     InlineKeyboardButton("🪜 Cardio Gym",  callback_data="gym_cardio_gym")],
-                ])
+                "What type of session?", reply_markup=_gym_type_keyboard()
             )
         else:
             # Default: straight to strength history, no menu
