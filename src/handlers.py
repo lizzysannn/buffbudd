@@ -374,19 +374,31 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             sheets.log_gym("Revl Strength", 0, 0, 0, None, "Strength session", "", "strength", 0)
             await query.edit_message_text("💪 Revl strength session logged. Get some rest, Liz.")
 
+        elif data == "gym_strength_pt":
+            sheets.log_gym("PT Strength", 0, 0, 0, None, "Strength session", "", "strength", 0)
+            await query.edit_message_text("💪 PT strength session logged. Get some rest, Liz.")
+
         elif data == "gym_strength_gym":
             sheets.log_gym("Gym Strength", 0, 0, 0, None, "Strength session", "", "strength", 0)
             await query.edit_message_text("💪 Gym strength session logged. Get some rest, Liz.")
+
+        elif data == "gym_cardio_revl":
+            await reply("🤸 How long was Revl cardio? (e.g. 20min)")
+            ctx.user_data["awaiting_menu_log"] = "gym_cardio_revl_time"
 
         elif data == "gym_cardio_run":
             await reply("🏃 How far did you run? (e.g. 5km, 6.5km)")
             ctx.user_data["awaiting_menu_log"] = "gym_run_distance"
 
+        elif data == "gym_cardio_stairmaster":
+            await reply("🪜 How many minutes on the stairmaster?")
+            ctx.user_data["awaiting_menu_log"] = "gym_cardio_stairmaster_time"
+
+        # Legacy callbacks — kept for safety
         elif data == "gym_cardio_gym":
             await reply("🪜 How long and what? (e.g. '30min stairmaster', '20min incline walk')")
             ctx.user_data["awaiting_menu_log"] = "gym_cardio_time"
 
-        # Legacy callbacks — kept for safety
         elif data == "gym_stairmaster":
             await reply("⏱ How many minutes on the stairmaster/incline?")
             ctx.user_data["awaiting_menu_log"] = "gym_cardio_time"
@@ -628,14 +640,16 @@ async def handle_target_muscle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 def _gym_type_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💪 Strength Revl",  callback_data="gym_strength_revl"),
-         InlineKeyboardButton("🏋️ Strength Gym",   callback_data="gym_strength_gym")],
-        [InlineKeyboardButton("🏃 Cardio Run",     callback_data="gym_cardio_run"),
-         InlineKeyboardButton("🪜 Cardio Gym",     callback_data="gym_cardio_gym")],
+         InlineKeyboardButton("🏋️ Strength PT",    callback_data="gym_strength_pt")],
+        [InlineKeyboardButton("🏋️‍♀️ Strength Gym", callback_data="gym_strength_gym")],
+        [InlineKeyboardButton("🤸 Cardio Revl",    callback_data="gym_cardio_revl"),
+         InlineKeyboardButton("🏃 Cardio Run",     callback_data="gym_cardio_run")],
+        [InlineKeyboardButton("🪜 Cardio Stairmaster", callback_data="gym_cardio_stairmaster")],
     ])
 
 
 async def _show_gym_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE, set_name_hint: str = ""):
-    """Show 4-option gym type menu."""
+    """Show 6-option gym type menu."""
     await update.effective_message.reply_text(
         "What type of session?", reply_markup=_gym_type_keyboard()
     )
@@ -973,6 +987,16 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         elif mode == "gym_cardio_time":
             # User replied with duration (e.g. "20", "20min", "stairmaster 20min")
             await _log_gym_session(text, ctx, reply)
+        elif mode == "gym_cardio_revl_time":
+            dur_m = re.search(r'(\d+\.?\d*)', text)
+            dur = int(float(dur_m.group(1))) if dur_m else 0
+            sheets.log_gym("Revl Cardio", 0, 0, 0, None, f"{dur}min revl cardio", "", "cardio", dur)
+            await reply(f"🤸 {dur}min Revl cardio logged. Strong work!")
+        elif mode == "gym_cardio_stairmaster_time":
+            dur_m = re.search(r'(\d+\.?\d*)', text)
+            dur = int(float(dur_m.group(1))) if dur_m else 0
+            sheets.log_gym("Stairmaster", 0, 0, 0, None, f"{dur}min stairmaster", "", "cardio", dur)
+            await reply(f"🪜 {dur}min stairmaster logged. Strong work!")
         return
 
     # Weekly summary fast-path — catches "weeklysummary", "weekly summary", "/weeklysummary" as text
