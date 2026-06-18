@@ -371,16 +371,16 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         reply = query.message.reply_text
 
         if data == "gym_strength_revl":
-            sheets.log_gym("Revl Strength", 0, 0, 0, None, "Strength session", "", "strength", 0)
-            await query.edit_message_text("💪 Revl strength session logged. Get some rest, Liz.")
+            await query.edit_message_text("💪 What did you do? (e.g. 80kg deadlift; 37.5kg row) — or just say 'done' to log the session.")
+            ctx.user_data["awaiting_menu_log"] = "gym_strength_revl_notes"
 
         elif data == "gym_strength_pt":
-            sheets.log_gym("PT Strength", 0, 0, 0, None, "Strength session", "", "strength", 0)
-            await query.edit_message_text("💪 PT strength session logged. Get some rest, Liz.")
+            await query.edit_message_text("💪 What did you do? (e.g. 80kg deadlift; 37.5kg row) — or just say 'done' to log the session.")
+            ctx.user_data["awaiting_menu_log"] = "gym_strength_pt_notes"
 
         elif data == "gym_strength_gym":
-            sheets.log_gym("Gym Strength", 0, 0, 0, None, "Strength session", "", "strength", 0)
-            await query.edit_message_text("💪 Gym strength session logged. Get some rest, Liz.")
+            await query.edit_message_text("💪 What did you do? (e.g. 80kg deadlift; 37.5kg row) — or just say 'done' to log the session.")
+            ctx.user_data["awaiting_menu_log"] = "gym_strength_gym_notes"
 
         elif data == "gym_cardio_revl":
             await reply("🤸 How long was Revl cardio? (e.g. 20min)")
@@ -997,6 +997,16 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             dur = int(float(dur_m.group(1))) if dur_m else 0
             sheets.log_gym("Stairmaster", 0, 0, 0, None, f"{dur}min stairmaster", "", "cardio", dur)
             await reply(f"🪜 {dur}min stairmaster logged. Strong work!")
+        elif mode in ("gym_strength_revl_notes", "gym_strength_pt_notes", "gym_strength_gym_notes"):
+            label_map = {
+                "gym_strength_revl_notes": "Revl Strength",
+                "gym_strength_pt_notes":   "PT Strength",
+                "gym_strength_gym_notes":  "Gym Strength",
+            }
+            exercise_label = label_map[mode]
+            notes = "" if text.strip().lower() in {"done", "skip", "-"} else text.strip()
+            sheets.log_gym(exercise_label, 0, 0, 0, None, notes, "", "strength", 0)
+            await reply(f"💪 {exercise_label} session logged. Get some rest, Liz.")
         return
 
     # Weekly summary fast-path — catches "weeklysummary", "weekly summary", "/weeklysummary" as text
