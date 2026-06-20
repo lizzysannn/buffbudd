@@ -1187,7 +1187,11 @@ def _build_food_logged_msg(macros: dict, meal_type: str, totals: dict) -> str:
     """Confirmation message shown after a meal is logged — full macros per item + running day totals."""
     SUGAR_TARGET = 25.0
     items = macros.get("items", [])
-    lines = [f"✅ *{meal_type.capitalize()} logged*\n"]
+    note = macros.get("note", "")
+    header = f"✅ *{meal_type.capitalize()} logged*"
+    if note:
+        header += f"\n_{note}_"
+    lines = [header + "\n"]
 
     # Per-item breakdown
     if items:
