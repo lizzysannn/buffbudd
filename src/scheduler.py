@@ -573,6 +573,11 @@ async def _weekly_report(bot: Bot, week_offset: int = 1):
     )
     await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="Markdown")
 
+    try:
+        sheets.log_report("Weekly Report", week_label, msg)
+    except Exception:
+        pass
+
 
 def _week_start() -> str:
     from datetime import date, timedelta

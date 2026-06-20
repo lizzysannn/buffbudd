@@ -201,6 +201,18 @@ def _parse_macro_response(text: str) -> dict:
     }
 
 
+def generate_food_description(meal_desc: str, calories: int, protein: float) -> str:
+    """2-3 sentence MasterChef/Ratatouille-style vivid food description."""
+    prompt = (
+        f"Describe this meal in 2-3 sentences. MasterChef commentary crossed with Ratatouille's critic monologue — "
+        f"vivid and sensory but not flowery. Notice textures, contrasts, intent. Be evocative, not precious.\n\n"
+        f"Meal: {meal_desc}\n"
+        f"Macros: {calories} cal, {protein:.0f}g protein\n\n"
+        "No quotes. No labels. Just the description."
+    )
+    return _call(prompt, max_tokens=120, system=BUFF_BUDDY_SYSTEM)
+
+
 # ── Gym ───────────────────────────────────────────────────────────────────────
 
 def parse_gym_entry(text: str) -> dict:

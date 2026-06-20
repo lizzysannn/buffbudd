@@ -496,6 +496,15 @@ async def _log_meal_text(text: str, reply, ctx=None, meal_type: str = ""):
             await reply("What did you eat exactly? Give me weights if you have them — e.g. `100g chicken, 150g rice, side salad`")
             return
 
+        # Vivid food description (MasterChef voice)
+        try:
+            food_desc = claude_ai.generate_food_description(
+                macros.get("description", text), macros["calories"], macros["protein"]
+            )
+            macros["note"] = food_desc
+        except Exception:
+            pass
+
         resolved_type = meal_type or macros.get("meal_type") or sheets.infer_meal_type_from_time()
 
         if ctx:
@@ -1445,20 +1454,47 @@ async def _fetch_and_show_stats(log_date: str, reply):
 
         lines.append("")
 
-        # ── Body check-in ─────────────────────────────────────────────────────
+        # ── Body check-in + weight trend ──────────────────────────────────────
+        lines.append("⚖️ *Body*")
         if body_row and (body_row.get("Weight (kg)") or body_row.get("Body Feel")):
-            w = body_row.get("Weight (kg)", "")
+            w_today = body_row.get("Weight (kg)", "")
             bf = body_row.get("Body Fat (%)", "")
             tags = body_row.get("Body Feel", "")
             parts = []
-            if w:
-                parts.append(f"{w}kg")
+            if w_today:
+                parts.append(f"{w_today}kg")
             if bf:
                 parts.append(f"BF {bf}%")
             if tags:
                 parts.append(f"_{tags}_")
-            lines.append("⚖️ *Body* — " + " · ".join(parts))
-            lines.append("")
+            lines.append(" · ".join(parts))
+
+            # Weight trend vs past 7 and 30 days
+            try:
+                trend_30 = sheets.get_body_trend(days=30)
+                weights_7  = [float(r["Weight (kg)"]) for r in trend_30[-7:]  if r.get("Weight (kg)")]
+                weights_30 = [float(r["Weight (kg)"]) for r in trend_30       if r.get("Weight (kg)")]
+                current_w  = float(w_today)
+                if weights_7 and len(weights_7) > 1:
+                    avg_7 = sum(weights_7[:-1]) / (len(weights_7) - 1)
+                    diff_7 = current_w - avg_7
+                    trend_7_str = f"{'↑' if diff_7 > 0 else '↓'}{abs(diff_7):.1f}kg vs last 7d"
+                else:
+                    trend_7_str = ""
+                if weights_30 and len(weights_30) > 1:
+                    avg_30 = sum(weights_30[:-1]) / (len(weights_30) - 1)
+                    diff_30 = current_w - avg_30
+                    trend_30_str = f"{'↑' if diff_30 > 0 else '↓'}{abs(diff_30):.1f}kg vs last 30d"
+                else:
+                    trend_30_str = ""
+                trend_parts = [s for s in [trend_7_str, trend_30_str] if s]
+                if trend_parts:
+                    lines.append(f"_{' · '.join(trend_parts)}_")
+            except Exception:
+                pass
+        else:
+            lines.append("Not logged today")
+        lines.append("")
 
         # ── Gym week progress ─────────────────────────────────────────────────
         today = date.today()
@@ -1478,7 +1514,13 @@ async def _fetch_and_show_stats(log_date: str, reply):
                 InlineKeyboardButton("✅ Done for Day", callback_data="menu_done_day")
             ]])
 
-        await reply("\n".join(lines), parse_mode="Markdown", reply_markup=kb)
+        output_text = "\n".join(lines)
+        await reply(output_text, parse_mode="Markdown", reply_markup=kb)
+
+        try:
+            sheets.log_report("Daily Summary", log_date, output_text)
+        except Exception:
+            pass
 
     except Exception as e:
         log.error(traceback.format_exc()); await reply(_safe_error(e, "stats fetch"))
@@ -1519,7 +1561,16 @@ async def _handle_week_stats(reply):
         else:
             lines.append(f"{gym_needed} more needed · {days_left} day{'s' if days_left != 1 else ''} left")
 
-        await reply("\n".join(lines), parse_mode="Markdown")
+        output_text = "\n".join(lines)
+        await reply(output_text, parse_mode="Markdown")
+
+        try:
+            from datetime import date as _d, timedelta as _td
+            _today = _d.today()
+            _mon = (_today - _td(days=_today.weekday())).isoformat()
+            sheets.log_report("Week Stats", f"{_mon} – {_today.isoformat()}", output_text)
+        except Exception:
+            pass
 
     except Exception as e:
         log.error(traceback.format_exc()); await reply(_safe_error(e, "week stats"))
@@ -1601,6 +1652,33 @@ async def _handle_done_for_day(reply):
             lines.append("Not logged yet")
         lines.append("")
 
+        # ── Weight trend ──────────────────────────────────────────────────────
+        body_today = sheets.get_body_by_date(today_str)
+        lines.append("⚖️ *Weight*")
+        if body_today and body_today.get("Weight (kg)"):
+            w_now = float(body_today["Weight (kg)"])
+            lines.append(f"{w_now}kg")
+            try:
+                trend_30 = sheets.get_body_trend(days=30)
+                weights_7  = [float(r["Weight (kg)"]) for r in trend_30[-7:]  if r.get("Weight (kg)") and r.get("Date") != today_str]
+                weights_30 = [float(r["Weight (kg)"]) for r in trend_30       if r.get("Weight (kg)") and r.get("Date") != today_str]
+                trend_parts = []
+                if weights_7:
+                    avg_7 = sum(weights_7) / len(weights_7)
+                    diff_7 = w_now - avg_7
+                    trend_parts.append(f"{'↑' if diff_7 > 0 else '↓'}{abs(diff_7):.1f}kg vs 7d avg")
+                if weights_30:
+                    avg_30 = sum(weights_30) / len(weights_30)
+                    diff_30 = w_now - avg_30
+                    trend_parts.append(f"{'↑' if diff_30 > 0 else '↓'}{abs(diff_30):.1f}kg vs 30d avg")
+                if trend_parts:
+                    lines.append(f"_{' · '.join(trend_parts)}_")
+            except Exception:
+                pass
+        else:
+            lines.append("Not logged today")
+        lines.append("")
+
         # ── vs Yesterday: delta + one-liner ──────────────────────────────────
         yest_cal = sum(int(r.get("Calories", 0)) for r in yest_food)
         yest_pro = sum(float(r.get("Protein", 0)) for r in yest_food)
@@ -1666,7 +1744,13 @@ async def _handle_done_for_day(reply):
             note = "Day's done. Rest up and go again tomorrow."
 
         lines.append(f"_{note}_")
-        await reply("\n".join(lines), parse_mode="Markdown")
+        output_text = "\n".join(lines)
+        await reply(output_text, parse_mode="Markdown")
+
+        try:
+            sheets.log_report("Done for Day", today_str, output_text)
+        except Exception:
+            pass
 
     except Exception as e:
         log.error(traceback.format_exc()); await reply(_safe_error(e, "end of day"))

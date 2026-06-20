@@ -10,7 +10,7 @@ from src.config import (
     COACH_NUTRITION_DOC_ID, COACH_TRAINING_DOC_ID, WEEKLY_GOALS_DOC_ID,
     SHEET_FOOD, SHEET_GYM, SHEET_SLEEP, SHEET_SUMMARY,
     SHEET_EMOTIONS, SHEET_ACTIVITY, SHEET_CYCLE, SHEET_CATALOGUE,
-    SHEET_BODY, SHEET_CONTENT, HEIGHT_M,
+    SHEET_BODY, SHEET_CONTENT, SHEET_REPORTS, HEIGHT_M,
 )
 
 SCOPES = [
@@ -820,3 +820,16 @@ def log_reflection(note: str, log_date: str = "") -> None:
     days = (today - transform_start).days
     week_num = f"Week {max(1, days // 7 + 1)}"
     log_content(note, week_num, "Reflection", "Do Better", "", log_date)
+
+
+def log_report(report_type: str, date_range: str, output: str) -> None:
+    """Store a bot report output: type, date/range, and full text."""
+    ws = _sheet(SHEET_REPORTS)
+    now = datetime.now()
+    ws.append_row([
+        now.strftime("%Y-%m-%d"),
+        now.strftime("%H:%M"),
+        report_type,
+        date_range,
+        output,
+    ])
