@@ -1746,11 +1746,26 @@ async def _handle_done_for_day(reply):
         lines.append("")
 
         # ── Coach push ────────────────────────────────────────────────────────
-        day_str  = f"Cal {total_cal}/{DEFAULT_CALORIES}, P {total_pro:.0f}g/{DEFAULT_PROTEIN}g, Sugar {total_sugar:.0f}g, Gym: {'yes' if gym_rows else 'rest'}, Sleep: {sleep_row.get('Hours','?') if sleep_row else 'not logged'}"
+        sleep_detail = "not logged"
+        if sleep_row:
+            _sh = sleep_row.get("Hours", "?")
+            _st = sleep_row.get("Sleep Time", "")
+            _wt = sleep_row.get("Wake Time", "")
+            sleep_detail = f"{_sh}h" + (f" ({_st}→{_wt})" if _st and _wt else "")
+        gym_type = ""
+        if strength_rows:
+            gym_type += f"strength ({strength_rows[0].get('Exercise','session')})"
+        if cardio_rows:
+            gym_type += (" + " if gym_type else "") + f"cardio {cardio_mins}min"
+        day_str = (
+            f"Cal {total_cal}/{DEFAULT_CALORIES}, P {total_pro:.0f}g/{DEFAULT_PROTEIN}g, "
+            f"Sugar {total_sugar:.0f}g, Carbs {total_carbs:.0f}g, Fats {total_fats:.0f}g, "
+            f"Gym: {gym_type or 'rest'}, Sleep: {sleep_detail}"
+        )
         week_str = (f"Gym {gym_done}/{DEFAULT_GYM_SESSIONS_WEEK}, Cardio {cardio_done}/{DEFAULT_CARDIO_SESSIONS_WEEK}, "
                     f"Cal on-target {days_cal_hit}/{days_logged}d, Protein on-target {days_pro_hit}/{days_logged}d, "
                     f"Sleep 7h+ {days_sleep_hit}/{days_sleep_logged}d, {days_left}d left this week")
-        yest_str = f"Cal {yest_cal}, P {yest_pro:.0f}g, Sugar {yest_sug:.0f}g, Gym: {'yes' if yest_gym else 'rest'}" if (yest_food or yest_gym) else ""
+        yest_str = f"Cal {yest_cal}, P {yest_pro:.0f}g, Sugar {yest_sug:.0f}g, Gym: {'yes' if yest_gym else 'rest'}, Sleep: {yest_h}h" if (yest_food or yest_gym) else ""
         try:
             note = claude_ai.generate_end_of_day_coaching(day_str, week_str, yest_str)
         except Exception:

@@ -202,17 +202,16 @@ def _parse_macro_response(text: str) -> dict:
 
 
 def generate_food_description(meal_desc: str, calories: int, protein: float) -> str:
-    """One or two short sentences — poetic, elevating, personal food description."""
+    """1-2 sentences — French restaurant / Ratatouille-style love letter to the food."""
     prompt = (
-        "Liz is on a body transformation. She tracks macros carefully, keeps sugar low, and prepares her food with intention.\n"
-        "She is feeding herself — not just eating. Every meal is an act of self-investment.\n\n"
-        f"Meal: {meal_desc}\n"
-        f"Macros: {calories} cal · {protein:.0f}g protein\n\n"
-        "Write 1-2 sentences that make her feel the beauty and intention in what she's eating. "
-        "Ratatouille critic energy — moved, specific, reverent about the small details. "
-        "Notice what's been chosen deliberately: the protein, the balance, the restraint on sugar. "
-        "Don't list ingredients back. Don't mention macros. Don't be generic. Make her feel like she's nourishing something rare.\n\n"
-        "No quotes. No labels. Speak to her, not about the food."
+        "You are describing food the way a Michelin-starred French chef speaks about a dish — "
+        "with reverence, sensory precision, and genuine love. Like Anton Ego in Ratatouille when a single bite "
+        "transports him. The food is the star.\n\n"
+        f"Dish: {meal_desc}\n\n"
+        "Write 1-2 sentences. Describe what this food IS — its colour, warmth, texture, aroma, how the "
+        "ingredients meet each other. Make the reader taste it. Be specific to these exact ingredients. "
+        "Do NOT mention macros, calories, health, or discipline. Do NOT be generic. "
+        "No quotes. No labels. Pure sensory love."
     )
     return _call(prompt, max_tokens=120, system=BUFF_BUDDY_SYSTEM)
 
@@ -292,19 +291,26 @@ def generate_food_day_story(meals: str, cal: int, target_cal: int, protein: floa
 
 
 def generate_end_of_day_coaching(day_summary: str, week_summary: str, yesterday_summary: str = "") -> str:
-    """Compact coach push for end-of-day — acknowledge, compare, push."""
+    """Body-aware coaching — draws connections across sleep, nutrition, training, sugar, recovery."""
     yesterday_block = f"Yesterday: {yesterday_summary}\n" if yesterday_summary else ""
     prompt = (
         f"Today: {day_summary}\n"
         f"{yesterday_block}"
-        f"Week: {week_summary}\n\n"
-        "Write a Buff Buddy coach message. 3–4 lines max. "
-        "Acknowledge one specific thing from today (win OR gap). "
-        "If yesterday data exists, call out one change (better or worse) in one line. "
-        "End with one sharp, specific action for tomorrow or the remaining days. "
-        "Sound like a real coach — direct, warm, no fluff."
+        f"Week so far: {week_summary}\n\n"
+        "Write a Buff Buddy coach insight. 3-5 lines. Think like a sports scientist who also has heart.\n\n"
+        "Draw at least ONE connection across different pillars — for example:\n"
+        "- Low sleep + hard training = slower recovery, higher hunger\n"
+        "- High sugar + low protein = energy crash pattern\n"
+        "- Gym session today + protein target hit = muscle repair window open\n"
+        "- Rest day + low cal + high protein = smart recovery day\n"
+        "- Poor sleep streak + low energy tags = flag it honestly\n\n"
+        "Be specific to today's actual numbers. Name the link clearly. "
+        "Then give ONE body awareness cue — something for her to notice or try tomorrow "
+        "(e.g. 'notice how your hunger shifts on days you hit protein before noon', "
+        "'try logging your energy 2h after training this week'). "
+        "End with one sharp action. Direct, warm, no fluff."
     )
-    return _call(prompt, max_tokens=220)
+    return _call(prompt, max_tokens=280)
 
 
 def generate_daily_summary_note(context: str, missing: list[str], yesterday_context: str = "") -> str:
