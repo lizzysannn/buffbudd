@@ -1387,6 +1387,43 @@ async def _handle_stats_query(text: str, reply, ctx=None, skip_confirm: bool = F
         log.error(traceback.format_exc()); await reply(_safe_error(e, "stats query"))
 
 
+def _weight_trend_lines(current_w: float, today_iso: str) -> list[str]:
+    """Return formatted weight trend lines: 3d individual + 30d high/low."""
+    from datetime import date as _d, timedelta as _td
+    lines = []
+    try:
+        trend_30 = sheets.get_body_trend(days=30)
+        past = [(r.get("Date", ""), float(r["Weight (kg)"]))
+                for r in trend_30 if r.get("Weight (kg)") and r.get("Date") != today_iso]
+        # 3 most recent individual weights (yest, day-2, day-3)
+        recent = past[-3:][::-1]  # newest first
+        if recent:
+            labels = ["yest", "2d ago", "3d ago"]
+            parts = [f"{lbl} {w:.1f}kg" for (_, w), lbl in zip(recent, labels)]
+            avg_3 = round(sum(w for _, w in recent) / len(recent), 1)
+            lines.append(f"_3d avg {avg_3}kg  [{', '.join(parts)}]_")
+        # 30d high/low
+        weights_30 = [w for _, w in past]
+        if weights_30:
+            avg_30 = round(sum(weights_30) / len(weights_30), 1)
+            high_30 = max(weights_30)
+            low_30  = min(weights_30)
+            lines.append(f"_30d avg {avg_30}kg  [high {high_30:.1f} · low {low_30:.1f}]_")
+    except Exception:
+        pass
+    return lines
+
+
+def _sleep_time_str(sleep_row: dict) -> str:
+    """Format sleep time display: hours + optional bedtime→wake."""
+    h = float(sleep_row.get("Hours", 0))
+    st = (sleep_row.get("Sleep Time") or "").strip()
+    wt = (sleep_row.get("Wake Time") or "").strip()
+    label = "High 🟢" if h >= 7 else "Medium 🟡" if h >= 6 else "Low 🔴"
+    time_part = f"  {st} → {wt}" if st and wt else (f"  slept {st}" if st else (f"  woke {wt}" if wt else ""))
+    return f"{h}h · {label}{time_part}"
+
+
 async def _fetch_and_show_stats(log_date: str, reply):
     """Fetch and display the full daily summary for a given date."""
     try:
@@ -1463,9 +1500,8 @@ async def _fetch_and_show_stats(log_date: str, reply):
 
         # ── Sleep ─────────────────────────────────────────────────────────────
         if sleep_row:
-            h = float(sleep_row.get("Hours", 0))
             notes = (sleep_row.get("Notes") or sleep_row.get("Quality") or "").strip()
-            lines.append(f"😴 *Sleep* — {h}h" + (f" · _{notes}_" if notes else ""))
+            lines.append(f"😴 *Sleep* — {_sleep_time_str(sleep_row)}" + (f" · _{notes}_" if notes else ""))
         else:
             lines.append("😴 *Sleep* — not logged")
 
@@ -1485,30 +1521,8 @@ async def _fetch_and_show_stats(log_date: str, reply):
             if tags:
                 parts.append(f"_{tags}_")
             lines.append(" · ".join(parts))
-
-            # Weight trend vs past 7 and 30 days
-            try:
-                trend_30 = sheets.get_body_trend(days=30)
-                weights_7  = [float(r["Weight (kg)"]) for r in trend_30[-7:]  if r.get("Weight (kg)")]
-                weights_30 = [float(r["Weight (kg)"]) for r in trend_30       if r.get("Weight (kg)")]
-                current_w  = float(w_today)
-                if weights_7 and len(weights_7) > 1:
-                    avg_7 = sum(weights_7[:-1]) / (len(weights_7) - 1)
-                    diff_7 = current_w - avg_7
-                    trend_7_str = f"{'↑' if diff_7 > 0 else '↓'}{abs(diff_7):.1f}kg vs last 7d"
-                else:
-                    trend_7_str = ""
-                if weights_30 and len(weights_30) > 1:
-                    avg_30 = sum(weights_30[:-1]) / (len(weights_30) - 1)
-                    diff_30 = current_w - avg_30
-                    trend_30_str = f"{'↑' if diff_30 > 0 else '↓'}{abs(diff_30):.1f}kg vs last 30d"
-                else:
-                    trend_30_str = ""
-                trend_parts = [s for s in [trend_7_str, trend_30_str] if s]
-                if trend_parts:
-                    lines.append(f"_{' · '.join(trend_parts)}_")
-            except Exception:
-                pass
+            if w_today:
+                lines.extend(_weight_trend_lines(float(w_today), log_date))
         else:
             lines.append("Not logged today")
         lines.append("")
@@ -1662,9 +1676,7 @@ async def _handle_done_for_day(reply):
         # ── Sleep: one line ───────────────────────────────────────────────────
         lines.append("😴 *Sleep*")
         if sleep_row:
-            h = float(sleep_row.get("Hours", 0))
-            label = "High 🟢" if h >= 7 else "Medium 🟡" if h >= 6 else "Low 🔴"
-            lines.append(f"{h}h · {label}")
+            lines.append(_sleep_time_str(sleep_row))
         else:
             lines.append("Not logged yet")
         lines.append("")
@@ -1675,23 +1687,7 @@ async def _handle_done_for_day(reply):
         if body_today and body_today.get("Weight (kg)"):
             w_now = float(body_today["Weight (kg)"])
             lines.append(f"{w_now}kg")
-            try:
-                trend_30 = sheets.get_body_trend(days=30)
-                weights_7  = [float(r["Weight (kg)"]) for r in trend_30[-7:]  if r.get("Weight (kg)") and r.get("Date") != today_str]
-                weights_30 = [float(r["Weight (kg)"]) for r in trend_30       if r.get("Weight (kg)") and r.get("Date") != today_str]
-                trend_parts = []
-                if weights_7:
-                    avg_7 = sum(weights_7) / len(weights_7)
-                    diff_7 = w_now - avg_7
-                    trend_parts.append(f"{'↑' if diff_7 > 0 else '↓'}{abs(diff_7):.1f}kg vs 7d avg")
-                if weights_30:
-                    avg_30 = sum(weights_30) / len(weights_30)
-                    diff_30 = w_now - avg_30
-                    trend_parts.append(f"{'↑' if diff_30 > 0 else '↓'}{abs(diff_30):.1f}kg vs 30d avg")
-                if trend_parts:
-                    lines.append(f"_{' · '.join(trend_parts)}_")
-            except Exception:
-                pass
+            lines.extend(_weight_trend_lines(w_now, today_str))
         else:
             lines.append("Not logged today")
         lines.append("")
