@@ -202,13 +202,17 @@ def _parse_macro_response(text: str) -> dict:
 
 
 def generate_food_description(meal_desc: str, calories: int, protein: float) -> str:
-    """One-sentence MasterChef/Ratatouille-style vivid food description."""
+    """One or two short sentences — poetic, elevating, personal food description."""
     prompt = (
-        f"One sentence only. MasterChef commentary — vivid, sensory, direct. "
-        f"Notice what makes this meal interesting: texture, contrast, purpose. Not precious, not generic.\n\n"
+        "Liz is on a body transformation. She tracks macros carefully, keeps sugar low, and prepares her food with intention.\n"
+        "She is feeding herself — not just eating. Every meal is an act of self-investment.\n\n"
         f"Meal: {meal_desc}\n"
-        f"Macros: {calories} cal, {protein:.0f}g protein\n\n"
-        "No quotes. No labels. One sentence."
+        f"Macros: {calories} cal · {protein:.0f}g protein\n\n"
+        "Write 1-2 sentences that make her feel the beauty and intention in what she's eating. "
+        "Ratatouille critic energy — moved, specific, reverent about the small details. "
+        "Notice what's been chosen deliberately: the protein, the balance, the restraint on sugar. "
+        "Don't list ingredients back. Don't mention macros. Don't be generic. Make her feel like she's nourishing something rare.\n\n"
+        "No quotes. No labels. Speak to her, not about the food."
     )
     return _call(prompt, max_tokens=120, system=BUFF_BUDDY_SYSTEM)
 
