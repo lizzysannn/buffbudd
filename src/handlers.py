@@ -852,7 +852,20 @@ async def _log_body_checkin(text: str, reply, ctx=None):
         lines = ["*Body Check-in*\n"]
         if weight:
             lines.append(f"⚖️ Weight: *{weight} kg*")
-            lines.append(f"📊 BMI: *{bmi}* ({_bmi_category(bmi)})")
+            try:
+                trend = sheets.get_body_trend(days=30)
+                today_iso = _date_cls.today().isoformat()
+                past = [float(r["Weight (kg)"]) for r in trend if r.get("Weight (kg)") and r.get("Date") != today_iso]
+                if past:
+                    avg_3  = round(sum(past[-3:])  / len(past[-3:]),  1) if len(past) >= 1 else None
+                    avg_7  = round(sum(past[-7:])  / len(past[-7:]),  1) if len(past) >= 1 else None
+                    trend_parts = []
+                    if avg_3:  trend_parts.append(f"3d avg {avg_3}kg")
+                    if avg_7:  trend_parts.append(f"week avg {avg_7}kg")
+                    if trend_parts:
+                        lines.append(f"_{' · '.join(trend_parts)}_")
+            except Exception:
+                pass
         if bf_pct:
             lines.append(f"🔬 Body fat: *{bf_pct}%*")
         if fat_mass:
