@@ -80,16 +80,17 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             m, mt = pending["macros"], pending["meal_type"]
             log_date = pending.get("log_date", "")
             breakdown = _items_to_breakdown_str(m.get("items", []))
-            sheets.log_food(m["description"], m["calories"], m["protein"], m["carbs"], m["fats"], mt, log_date, m.get("sugar", 0.0), breakdown)
+            # Estimate micros silently before writing the row
+            micros = None
+            try:
+                micros = claude_ai.estimate_micronutrients(m.get("description", ""), m.get("items", []))
+            except Exception:
+                pass
+            sheets.log_food(m["description"], m["calories"], m["protein"], m["carbs"], m["fats"],
+                            mt, log_date, m.get("sugar", 0.0), breakdown, micros=micros)
             totals = sheets.get_today_totals()
             msg = _build_food_logged_msg(m, mt, totals)
             await query.edit_message_text(msg, parse_mode="Markdown")
-            # Estimate + log micronutrients in background (non-blocking)
-            try:
-                micros = claude_ai.estimate_micronutrients(m.get("description", ""), m.get("items", []))
-                sheets.log_micronutrients(mt, m.get("description", ""), micros, log_date)
-            except Exception:
-                pass
 
     elif data == "reanalyse_food":
         # User said meals are different — run full Claude analysis on original text
@@ -1448,19 +1449,14 @@ def _micro_summary_lines(date_str: str) -> list[str]:
         rows = sheets.get_micros_by_date(date_str)
         if not rows:
             return []
-        # Sum all meals
+        # Sum all meals — Food Log uses the raw key names as column headers
         totals = {k: 0.0 for k in MICRO_RDA}
         for r in rows:
             for k in totals:
-                col = _MICRO_LABELS[k]
-                # Try both column name formats
-                for key in [k, col]:
-                    if key in r:
-                        try:
-                            totals[k] += float(r[key] or 0)
-                        except (ValueError, TypeError):
-                            pass
-                        break
+                try:
+                    totals[k] += float(r.get(k) or 0)
+                except (ValueError, TypeError):
+                    pass
         lines = ["🔬 *Micros (estimated)*"]
         good, low, watch = [], [], []
         for k, rda in MICRO_RDA.items():

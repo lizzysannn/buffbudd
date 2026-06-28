@@ -75,22 +75,33 @@ def infer_meal_type_from_time() -> str:
         return "supper"
 
 
-def log_food(meal_desc: str, calories: int, protein: float, carbs: float, fats: float, meal_type: str = "", log_date: str = "", sugar: float = 0.0, breakdown: str = ""):
+def log_food(meal_desc: str, calories: int, protein: float, carbs: float, fats: float,
+             meal_type: str = "", log_date: str = "", sugar: float = 0.0, breakdown: str = "",
+             micros: dict | None = None):
     ws = _sheet(SHEET_FOOD)
     now = datetime.now()
     row_date = log_date or now.strftime("%Y-%m-%d")
     row_time = now.strftime("%H:%M") if not log_date else ""
+    m = micros or {}
     ws.append_row([
-        row_date,
-        row_time,
+        row_date, row_time,
         meal_type or infer_meal_type_from_time(),
         meal_desc,
-        calories,
-        protein,
-        carbs,
-        fats,
-        sugar,
-        breakdown,   # col J — per-ingredient detail
+        calories, protein, carbs, fats, sugar,
+        breakdown,
+        # Micronutrient columns K–V
+        m.get("vitamin_a_ug", ""),
+        m.get("vitamin_c_mg", ""),
+        m.get("vitamin_d_ug", ""),
+        m.get("vitamin_e_mg", ""),
+        m.get("vitamin_b12_ug", ""),
+        m.get("folate_ug", ""),
+        m.get("calcium_mg", ""),
+        m.get("iron_mg", ""),
+        m.get("magnesium_mg", ""),
+        m.get("zinc_mg", ""),
+        m.get("potassium_mg", ""),
+        m.get("sodium_mg", ""),
     ])
 
 
@@ -822,49 +833,17 @@ def log_reflection(note: str, log_date: str = "") -> None:
     log_content(note, week_num, "Reflection", "Do Better", "", log_date)
 
 
-def log_micronutrients(meal_type: str, meal_desc: str, micros: dict, log_date: str = "") -> None:
-    """Append a micronutrient estimate row for a logged meal."""
-    ws = _sheet(SHEET_MICROS)
-    now = datetime.now()
-    row_date = log_date or now.strftime("%Y-%m-%d")
-    row_time = now.strftime("%H:%M") if not log_date else ""
-    ws.append_row([
-        row_date, row_time, meal_type, meal_desc,
-        micros.get("vitamin_a_ug", 0),
-        micros.get("vitamin_c_mg", 0),
-        micros.get("vitamin_d_ug", 0),
-        micros.get("vitamin_e_mg", 0),
-        micros.get("vitamin_b12_ug", 0),
-        micros.get("folate_ug", 0),
-        micros.get("calcium_mg", 0),
-        micros.get("iron_mg", 0),
-        micros.get("magnesium_mg", 0),
-        micros.get("zinc_mg", 0),
-        micros.get("potassium_mg", 0),
-        micros.get("sodium_mg", 0),
-    ])
-
-
 def get_micros_by_date(date_str: str) -> list[dict]:
-    """Return all micronutrient rows for a given date."""
-    ws = _sheet(SHEET_MICROS)
-    rows = ws.get_all_records()
-    target = _norm_date(date_str)
-    return [r for r in rows if _norm_date(r.get("Date", "")) == target]
+    """Return Food Log rows with micro columns for a given date."""
+    return get_food_by_date(date_str)
 
 
 def get_today_micros() -> list[dict]:
-    return get_micros_by_date(date.today().isoformat())
+    return get_today_food()
 
 
 def get_week_micros() -> list[dict]:
-    """Return micronutrient rows for the current week (Mon–today)."""
-    from datetime import timedelta
-    ws = _sheet(SHEET_MICROS)
-    rows = ws.get_all_records()
-    today = date.today()
-    week_start = _norm_date((today - timedelta(days=today.weekday())).isoformat())
-    return [r for r in rows if _norm_date(r.get("Date", "")) >= week_start]
+    return get_week_food()
 
 
 def log_report(report_type: str, date_range: str, output: str) -> None:
