@@ -402,6 +402,14 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await reply("🪜 How many minutes on the stairmaster?")
             ctx.user_data["awaiting_menu_log"] = "gym_cardio_stairmaster_time"
 
+        elif data == "gym_strength_other":
+            await query.edit_message_text("💪 What did you do? Describe it — e.g. 'reformer pilates 45min' or '80kg deadlift; cable rows'")
+            ctx.user_data["awaiting_menu_log"] = "gym_strength_other_notes"
+
+        elif data == "gym_cardio_other":
+            await reply("🏃 What cardio and how long? e.g. 'bike 30min', 'swimming 45min', 'reformer cardio 20min'")
+            ctx.user_data["awaiting_menu_log"] = "gym_cardio_other_notes"
+
         # Legacy callbacks — kept for safety
         elif data == "gym_cardio_gym":
             await reply("🪜 How long and what? (e.g. '30min stairmaster', '20min incline walk')")
@@ -658,10 +666,12 @@ def _gym_type_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💪 Strength Revl",  callback_data="gym_strength_revl"),
          InlineKeyboardButton("🏋️ Strength PT",    callback_data="gym_strength_pt")],
-        [InlineKeyboardButton("🏋️‍♀️ Strength Gym", callback_data="gym_strength_gym")],
+        [InlineKeyboardButton("🏋️‍♀️ Strength Gym", callback_data="gym_strength_gym"),
+         InlineKeyboardButton("➕ Strength Other", callback_data="gym_strength_other")],
         [InlineKeyboardButton("🤸 Cardio Revl",    callback_data="gym_cardio_revl"),
          InlineKeyboardButton("🏃 Cardio Run",     callback_data="gym_cardio_run")],
-        [InlineKeyboardButton("🪜 Cardio Stairmaster", callback_data="gym_cardio_stairmaster")],
+        [InlineKeyboardButton("🪜 Cardio Stairmaster", callback_data="gym_cardio_stairmaster"),
+         InlineKeyboardButton("➕ Cardio Other",   callback_data="gym_cardio_other")],
     ])
 
 
@@ -1037,6 +1047,16 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             notes = "" if text.strip().lower() in {"done", "skip", "-"} else text.strip()
             sheets.log_gym(exercise_label, 0, 0, 0, None, notes, "", "strength", 0)
             await reply(f"💪 {exercise_label} session logged. Get some rest, Liz.")
+        elif mode == "gym_strength_other_notes":
+            notes = "" if text.strip().lower() in {"done", "skip", "-"} else text.strip()
+            sheets.log_gym("Strength Other", 0, 0, 0, None, notes, "", "strength", 0)
+            await reply("💪 Strength session logged. Get some rest, Liz.")
+        elif mode == "gym_cardio_other_notes":
+            dur_m = re.search(r'(\d+\.?\d*)\s*min', text, re.IGNORECASE)
+            dur = int(float(dur_m.group(1))) if dur_m else 0
+            notes = text.strip()
+            sheets.log_gym("Cardio Other", 0, 0, 0, None, notes, "", "cardio", dur)
+            await reply(f"🏃 Cardio logged{f' — {dur}min' if dur else ''}. Strong work!")
         return
 
     # Weekly summary fast-path — catches "weeklysummary", "weekly summary", "/weeklysummary" as text
