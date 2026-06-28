@@ -89,7 +89,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             sheets.log_food(m["description"], m["calories"], m["protein"], m["carbs"], m["fats"],
                             mt, log_date, m.get("sugar", 0.0), breakdown, micros=micros)
             totals = sheets.get_today_totals()
-            msg = _build_food_logged_msg(m, mt, totals)
+            msg = _build_food_logged_msg(m, mt, totals, micros=micros)
             await query.edit_message_text(msg, parse_mode="Markdown")
 
     elif data == "reanalyse_food":
@@ -1225,7 +1225,7 @@ def _items_to_breakdown_str(items: list) -> str:
     return " | ".join(parts)
 
 
-def _build_food_logged_msg(macros: dict, meal_type: str, totals: dict) -> str:
+def _build_food_logged_msg(macros: dict, meal_type: str, totals: dict, micros: dict | None = None) -> str:
     """Confirmation message shown after a meal is logged — full macros per item + running day totals."""
     SUGAR_TARGET = 25.0
     items = macros.get("items", [])
@@ -1277,6 +1277,21 @@ def _build_food_logged_msg(macros: dict, meal_type: str, totals: dict) -> str:
 
     if totals["protein"] < DEFAULT_PROTEIN * 0.5 and totals["meals"] >= 2:
         lines.append("\nProtein's low, Liz. Prioritise it next meal.")
+
+    # Micro highlights for this meal
+    if micros:
+        high = []
+        for k, rda in MICRO_RDA.items():
+            val = float(micros.get(k) or 0)
+            if val > 0 and rda:
+                pct = val / rda
+                label = _MICRO_LABELS[k]
+                unit  = _MICRO_UNITS[k]
+                if pct >= 0.2:
+                    high.append(f"{label} {val:.0f}{unit} ({int(pct*100)}%)")
+        if high:
+            lines.append("\n🔬 *Micros this meal:* " + " · ".join(high))
+
     return "\n".join(lines)
 
 
