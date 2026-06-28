@@ -1835,7 +1835,7 @@ async def _handle_done_for_day(reply):
             lines.extend(micro_lines)
             lines.append("")
 
-        # ── Coach push ────────────────────────────────────────────────────────
+        # ── Coach push — build multi-day context for scientist review ─────────
         sleep_detail = "not logged"
         if sleep_row:
             _sh = sleep_row.get("Hours", "?")
@@ -1855,9 +1855,55 @@ async def _handle_done_for_day(reply):
         week_str = (f"Gym {gym_done}/{DEFAULT_GYM_SESSIONS_WEEK}, Cardio {cardio_done}/{DEFAULT_CARDIO_SESSIONS_WEEK}, "
                     f"Cal on-target {days_cal_hit}/{days_logged}d, Protein on-target {days_pro_hit}/{days_logged}d, "
                     f"Sleep 7h+ {days_sleep_hit}/{days_sleep_logged}d, {days_left}d left this week")
-        yest_str = f"Cal {yest_cal}, P {yest_pro:.0f}g, Sugar {yest_sug:.0f}g, Gym: {'yes' if yest_gym else 'rest'}, Sleep: {yest_h}h" if (yest_food or yest_gym) else ""
+
+        # Build 5-day longitudinal snapshot
+        multi_day_lines = []
         try:
-            note = claude_ai.generate_end_of_day_coaching(day_str, week_str, yest_str)
+            for _offset in range(1, 6):
+                _d = today - timedelta(days=_offset)
+                _ds = _d.isoformat()
+                _f  = sheets.get_food_by_date(_ds)
+                _sl = sheets.get_sleep_by_date(_ds)
+                _b  = sheets.get_body_by_date(_ds)
+                _g  = sheets.get_gym_by_date(_ds)
+                _mx = sheets.get_micros_by_date(_ds)
+                if not (_f or _sl or _b or _g):
+                    continue
+                _cal  = sum(int(r.get("Calories", 0)) for r in _f)
+                _pro  = sum(float(r.get("Protein", 0)) for r in _f)
+                _sug  = sum(sheets._get_sugar(r) for r in _f)
+                _h    = float(_sl.get("Hours", 0)) if _sl else None
+                _st   = _sl.get("Sleep Time", "") if _sl else ""
+                _wt   = _sl.get("Wake Time", "") if _sl else ""
+                _w    = _b.get("Weight (kg)", "") if _b else ""
+                _feel = _b.get("Body Feel", "") if _b else ""
+                _gym  = "rest" if not _g else ("strength" if any(str(r.get("Type","")).lower() != "cardio" for r in _g) else "cardio")
+                # micro highlights
+                _mi_parts = []
+                if _mx:
+                    _mi_tot = {}
+                    for _r in _mx:
+                        for _k in ["iron_mg","magnesium_mg","vitamin_d_ug","vitamin_c_mg","calcium_mg"]:
+                            _mi_tot[_k] = _mi_tot.get(_k, 0) + float(_r.get(_k, 0) or 0)
+                    for _k, _rda_v in [("iron_mg",18),("magnesium_mg",310),("vitamin_d_ug",15)]:
+                        _pct = _mi_tot.get(_k, 0) / _rda_v if _rda_v else 0
+                        if _pct < 0.5:
+                            _mi_parts.append(f"{_k.replace('_mg','').replace('_ug','')} low ({int(_pct*100)}%)")
+                sleep_str = f"{_h}h sleep" + (f" ({_st}→{_wt})" if _st and _wt else "") if _h else "no sleep log"
+                day_entry = (
+                    f"{_d.strftime('%a %d %b')}: Cal {_cal}, P {_pro:.0f}g, Sugar {_sug:.0f}g, "
+                    f"{sleep_str}, Gym: {_gym}"
+                    + (f", Weight {_w}kg" if _w else "")
+                    + (f", Feel: {_feel}" if _feel else "")
+                    + (f", Micros: {'; '.join(_mi_parts)}" if _mi_parts else "")
+                )
+                multi_day_lines.append(day_entry)
+        except Exception:
+            pass
+        multi_day_str = "\n".join(multi_day_lines)
+
+        try:
+            note = claude_ai.generate_end_of_day_coaching(day_str, week_str, multi_day_log=multi_day_str)
         except Exception:
             note = "Day's done. Rest up and go again tomorrow."
 

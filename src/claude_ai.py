@@ -318,27 +318,33 @@ def generate_food_day_story(meals: str, cal: int, target_cal: int, protein: floa
     return _call(prompt, max_tokens=80)
 
 
-def generate_end_of_day_coaching(day_summary: str, week_summary: str, yesterday_summary: str = "") -> str:
-    """Body-aware coaching — draws connections across sleep, nutrition, training, sugar, recovery."""
-    yesterday_block = f"Yesterday: {yesterday_summary}\n" if yesterday_summary else ""
+def generate_end_of_day_coaching(day_summary: str, week_summary: str, yesterday_summary: str = "",
+                                  multi_day_log: str = "") -> str:
+    """Scientist-educator review — reads 5+ days of data, finds patterns, explains the biology."""
+    multi_day_block = f"\n\n--- 5-DAY LOG (newest first) ---\n{multi_day_log}" if multi_day_log else ""
+    yesterday_block = f"\nYesterday: {yesterday_summary}" if yesterday_summary and not multi_day_log else ""
     prompt = (
-        f"Today: {day_summary}\n"
-        f"{yesterday_block}"
-        f"Week so far: {week_summary}\n\n"
-        "Write a Buff Buddy coach insight. 3-5 lines. Think like a sports scientist who also has heart.\n\n"
-        "Draw at least ONE connection across different pillars — for example:\n"
-        "- Low sleep + hard training = slower recovery, higher hunger\n"
-        "- High sugar + low protein = energy crash pattern\n"
-        "- Gym session today + protein target hit = muscle repair window open\n"
-        "- Rest day + low cal + high protein = smart recovery day\n"
-        "- Poor sleep streak + low energy tags = flag it honestly\n\n"
-        "Be specific to today's actual numbers. Name the link clearly. "
-        "Then give ONE body awareness cue — something for her to notice or try tomorrow "
-        "(e.g. 'notice how your hunger shifts on days you hit protein before noon', "
-        "'try logging your energy 2h after training this week'). "
-        "End with one sharp action. Direct, warm, no fluff."
+        "You are a sports scientist and nutritionist reviewing Liz's biometric log. "
+        "You have longitudinal data across food, sleep, training, body feel, and micronutrients.\n\n"
+        f"Today: {day_summary}{yesterday_block}\n"
+        f"Week so far: {week_summary}"
+        f"{multi_day_block}\n\n"
+        "Write a 4-6 line scientist review. Your job is to educate her about her own body by finding patterns in the data.\n\n"
+        "Rules:\n"
+        "— Identify at least ONE multi-day pattern (not just today vs yesterday). "
+        "Example: 'your sleep has averaged 6.1h this week — on those days your sugar intake was consistently higher, "
+        "which is a documented cortisol-driven craving response'\n"
+        "— Connect at least TWO pillars causally: nutrition ↔ energy, sleep ↔ recovery, "
+        "protein timing ↔ gym performance, micronutrient gaps ↔ fatigue tags, sugar ↔ mood\n"
+        "— Teach her something specific about the biology behind what you see — "
+        "explain WHY the pattern matters, not just that it exists\n"
+        "— Name one thing she is doing right and what it's doing for her body (specific)\n"
+        "— End with ONE testable experiment for tomorrow or this week: "
+        "something she can observe in her own body to build awareness "
+        "(e.g. 'tomorrow eat 30g protein within 60 min of waking — note your hunger at noon')\n\n"
+        "Tone: warm scientist. Precise but not clinical. Like a coach who also has a PhD. No fluff, no generic praise."
     )
-    return _call(prompt, max_tokens=280)
+    return _call(prompt, max_tokens=380)
 
 
 def generate_daily_summary_note(context: str, missing: list[str], yesterday_context: str = "") -> str:
