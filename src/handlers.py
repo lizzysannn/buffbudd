@@ -1462,6 +1462,21 @@ _MICRO_UNITS = {
     "vitamin_b12_ug":"µg","folate_ug":"µg","calcium_mg":"mg","iron_mg":"mg",
     "magnesium_mg":"mg","zinc_mg":"mg","potassium_mg":"mg","sodium_mg":"mg",
 }
+# Maps internal key → actual column header in the Food Log sheet
+_MICRO_SHEET_COL = {
+    "vitamin_a_ug":  "Vitamin A (µg)",
+    "vitamin_c_mg":  "Vitamin C (mg)",
+    "vitamin_d_ug":  "Vitamin D (µg)",
+    "vitamin_e_mg":  "Vitamin E (mg)",
+    "vitamin_b12_ug":"B12 (µg)",
+    "folate_ug":     "Folate (µg)",
+    "calcium_mg":    "Calcium (mg)",
+    "iron_mg":       "Iron (mg)",
+    "magnesium_mg":  "Magnesium (mg)",
+    "zinc_mg":       "Zinc (mg)",
+    "potassium_mg":  "Potassium (mg)",
+    "sodium_mg":     "Sodium (mg)",
+}
 
 
 def _micro_summary_lines(date_str: str) -> list[str]:
@@ -1470,12 +1485,12 @@ def _micro_summary_lines(date_str: str) -> list[str]:
         rows = sheets.get_micros_by_date(date_str)
         if not rows:
             return []
-        # Sum all meals — Food Log uses the raw key names as column headers
+        # Sum all meals — try sheet column name first, then internal key as fallback
         totals = {k: 0.0 for k in MICRO_RDA}
         for r in rows:
             for k in totals:
                 try:
-                    totals[k] += float(r.get(k) or 0)
+                    totals[k] += float(r.get(_MICRO_SHEET_COL.get(k, k)) or 0)
                 except (ValueError, TypeError):
                     pass
         lines = ["🔬 *Micros (estimated)*"]
@@ -1901,7 +1916,7 @@ async def _handle_done_for_day(reply):
                     _mi_tot = {}
                     for _r in _mx:
                         for _k in ["iron_mg","magnesium_mg","vitamin_d_ug","vitamin_c_mg","calcium_mg"]:
-                            _mi_tot[_k] = _mi_tot.get(_k, 0) + float(_r.get(_k, 0) or 0)
+                            _mi_tot[_k] = _mi_tot.get(_k, 0) + float(_r.get(_MICRO_SHEET_COL.get(_k, _k), 0) or 0)
                     for _k, _rda_v in [("iron_mg",18),("magnesium_mg",310),("vitamin_d_ug",15)]:
                         _pct = _mi_tot.get(_k, 0) / _rda_v if _rda_v else 0
                         if _pct < 0.5:
