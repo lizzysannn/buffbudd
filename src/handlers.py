@@ -91,7 +91,8 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             sheets.log_food(m["description"], m["calories"], m["protein"], m["carbs"], m["fats"],
                             mt, log_date, m.get("sugar", 0.0), breakdown, micros=micros)
             totals = sheets.get_today_totals()
-            msg = _build_food_logged_msg(m, mt, totals, micros=micros)
+            day_micros = sheets.get_today_micro_totals()
+            msg = _build_food_logged_msg(m, mt, totals, micros=micros, day_micros=day_micros)
             await query.edit_message_text(msg, parse_mode="Markdown")
 
     elif data == "reanalyse_food":
@@ -1227,7 +1228,7 @@ def _items_to_breakdown_str(items: list) -> str:
     return " | ".join(parts)
 
 
-def _build_food_logged_msg(macros: dict, meal_type: str, totals: dict, micros: dict | None = None) -> str:
+def _build_food_logged_msg(macros: dict, meal_type: str, totals: dict, micros: dict | None = None, day_micros: dict | None = None) -> str:
     """Confirmation message shown after a meal is logged — full macros per item + running day totals."""
     SUGAR_TARGET = 25.0
     items = macros.get("items", [])
@@ -1280,21 +1281,18 @@ def _build_food_logged_msg(macros: dict, meal_type: str, totals: dict, micros: d
     if totals["protein"] < DEFAULT_PROTEIN * 0.5 and totals["meals"] >= 2:
         lines.append("\nProtein's low, Liz. Prioritise it next meal.")
 
-    # Micro highlights for this meal
-    if micros:
-        high = []
+    # Day micro totals
+    if day_micros:
+        lines.append("\n🔬 *Micros today (running):*")
         for k, rda in MICRO_RDA.items():
-            val = float(micros.get(k) or 0)
-            if val > 0 and rda:
-                pct = val / rda
-                label = _MICRO_LABELS[k]
-                unit  = _MICRO_UNITS[k]
-                if pct >= 0.05:
-                    high.append(f"{label} {val:.0f}{unit} ({int(pct*100)}%)")
-        if high:
-            lines.append("\n🔬 *Micros this meal:* " + " · ".join(high))
-        else:
-            lines.append("\n🔬 _Micros: estimated but all negligible_")
+            val = float(day_micros.get(k) or 0)
+            if val == 0:
+                continue
+            pct = val / rda if rda else 0
+            label = _MICRO_LABELS[k]
+            unit  = _MICRO_UNITS[k]
+            bar   = "✅" if pct >= 0.7 else ("〜" if pct >= 0.4 else "↓")
+            lines.append(f"  {bar} {label}: {val:.0f}{unit} ({int(pct*100)}%)")
 
     return "\n".join(lines)
 

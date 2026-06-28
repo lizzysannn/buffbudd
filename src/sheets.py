@@ -188,6 +188,34 @@ def get_today_totals() -> dict:
     }
 
 
+_MICRO_SHEET_COLS = {
+    "vitamin_a_ug":  "Vitamin A (µg)",
+    "vitamin_c_mg":  "Vitamin C (mg)",
+    "vitamin_d_ug":  "Vitamin D (µg)",
+    "vitamin_e_mg":  "Vitamin E (mg)",
+    "vitamin_b12_ug":"B12 (µg)",
+    "folate_ug":     "Folate (µg)",
+    "calcium_mg":    "Calcium (mg)",
+    "iron_mg":       "Iron (mg)",
+    "magnesium_mg":  "Magnesium (mg)",
+    "zinc_mg":       "Zinc (mg)",
+    "potassium_mg":  "Potassium (mg)",
+    "sodium_mg":     "Sodium (mg)",
+}
+
+def get_today_micro_totals() -> dict:
+    """Sum all micro columns across today's Food Log rows."""
+    rows = get_today_food()
+    totals = {k: 0.0 for k in _MICRO_SHEET_COLS}
+    for r in rows:
+        for k, col in _MICRO_SHEET_COLS.items():
+            try:
+                totals[k] += float(r.get(col) or 0)
+            except (ValueError, TypeError):
+                pass
+    return totals
+
+
 # ── Gym Log ───────────────────────────────────────────────────────────────────
 
 def log_gym(exercise: str, sets: int, reps: int, weight: float, rpe: float | None, notes: str = "", log_date: str = "", exercise_type: str = "strength", duration_min: int = 0, distance_km: float = 0):
