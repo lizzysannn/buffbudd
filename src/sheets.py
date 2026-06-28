@@ -58,6 +58,26 @@ def _sheet(tab: str):
     return gc.open_by_key(SPREADSHEET_ID).worksheet(tab)
 
 
+def _get_records(ws) -> list[dict]:
+    """Safe get_all_records that handles duplicate or empty header columns."""
+    all_values = ws.get_all_values()
+    if not all_values:
+        return []
+    raw_headers = all_values[0]
+    # Deduplicate headers by appending _2, _3 etc. so gspread dict-building works
+    seen: dict[str, int] = {}
+    headers = []
+    for h in raw_headers:
+        h = h.strip()
+        if h in seen:
+            seen[h] += 1
+            headers.append(f"{h}_{seen[h]}")
+        else:
+            seen[h] = 1
+            headers.append(h)
+    return [dict(zip(headers, row)) for row in all_values[1:]]
+
+
 # ── Food Log ──────────────────────────────────────────────────────────────────
 
 def infer_meal_type_from_time() -> str:
@@ -116,7 +136,7 @@ def delete_last_food_row():
 def get_recent_meal_descriptions(meal_type: str = "", limit: int = 8) -> list[str]:
     """Return recent unique meal descriptions for context, optionally filtered by meal type."""
     ws = _sheet(SHEET_FOOD)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     if meal_type:
         rows = [r for r in rows if str(r.get("Meal Type", "")).lower() == meal_type.lower()]
     # Most recent first, deduplicated
@@ -134,7 +154,7 @@ def get_recent_meal_descriptions(meal_type: str = "", limit: int = 8) -> list[st
 def get_last_meal_entry(meal_type: str = "") -> dict | None:
     """Return the most recent food log row (with macros) for the given meal type."""
     ws = _sheet(SHEET_FOOD)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     if meal_type:
         rows = [r for r in rows if str(r.get("Meal Type", "")).lower() == meal_type.lower()]
     if not rows:
@@ -144,7 +164,7 @@ def get_last_meal_entry(meal_type: str = "") -> dict | None:
 
 def get_food_by_date(date_str: str) -> list[dict]:
     ws = _sheet(SHEET_FOOD)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     target = _norm_date(date_str)
     return [r for r in rows if _norm_date(r.get("Date", "")) == target]
 
@@ -152,7 +172,7 @@ def get_food_by_date(date_str: str) -> list[dict]:
 def get_today_food() -> list[dict]:
     ws = _sheet(SHEET_FOOD)
     today = _norm_date(date.today().isoformat())
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     return [r for r in rows if _norm_date(r.get("Date", "")) == today]
 
 
@@ -192,7 +212,7 @@ def log_gym(exercise: str, sets: int, reps: int, weight: float, rpe: float | Non
 
 def get_last_session(exercise: str) -> dict | None:
     ws = _sheet(SHEET_GYM)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     matches = [r for r in rows if str(r.get("Exercise", "")).lower() == exercise.lower()]
     if not matches:
         return None
@@ -201,7 +221,7 @@ def get_last_session(exercise: str) -> dict | None:
 
 def get_pb(exercise: str) -> dict | None:
     ws = _sheet(SHEET_GYM)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     matches = [r for r in rows if str(r.get("Exercise", "")).lower() == exercise.lower()]
     if not matches:
         return None
@@ -211,20 +231,20 @@ def get_pb(exercise: str) -> dict | None:
 def get_today_gym() -> list[dict]:
     ws = _sheet(SHEET_GYM)
     today = _norm_date(date.today().isoformat())
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     return [r for r in rows if _norm_date(r.get("Date", "")) == today]
 
 
 def get_gym_by_date(date_str: str) -> list[dict]:
     ws = _sheet(SHEET_GYM)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     target = _norm_date(date_str)
     return [r for r in rows if _norm_date(r.get("Date", "")) == target]
 
 
 def get_sleep_by_date(date_str: str) -> dict | None:
     ws = _sheet(SHEET_SLEEP)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     target = _norm_date(date_str)
     matches = [r for r in rows if _norm_date(r.get("Date", "")) == target]
     return matches[-1] if matches else None
@@ -242,7 +262,7 @@ def log_sleep(hours: float, notes: str = "", log_date: str = "",
 
 def get_sleep_streak() -> int:
     ws = _sheet(SHEET_SLEEP)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     if not rows:
         return 0
     streak = 0
@@ -257,7 +277,7 @@ def get_sleep_streak() -> int:
 def get_today_sleep() -> dict | None:
     ws = _sheet(SHEET_SLEEP)
     today = _norm_date(date.today().isoformat())
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     matches = [r for r in rows if _norm_date(r.get("Date", "")) == today]
     return matches[-1] if matches else None
 
@@ -266,7 +286,7 @@ def get_today_emotions() -> dict | None:
     """Return today's most recent emotions log row, or None."""
     ws = _sheet(SHEET_EMOTIONS)
     today = _norm_date(date.today().isoformat())
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     matches = [r for r in rows if _norm_date(r.get("Date", "")) == today]
     return matches[-1] if matches else None
 
@@ -274,7 +294,7 @@ def get_today_emotions() -> dict | None:
 def get_emotions_by_date(date_str: str) -> dict | None:
     """Return emotions log row for a specific date, or None."""
     ws = _sheet(SHEET_EMOTIONS)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     target = _norm_date(date_str)
     matches = [r for r in rows if _norm_date(r.get("Date", "")) == target]
     return matches[-1] if matches else None
@@ -306,7 +326,7 @@ def log_weekly_summary(data: dict):
 def get_week_food() -> list[dict]:
     from datetime import timedelta
     ws = _sheet(SHEET_FOOD)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     today = date.today()
     week_start = _norm_date((today - timedelta(days=today.weekday())).isoformat())
     return [r for r in rows if _norm_date(r.get("Date", "")) >= week_start]
@@ -325,7 +345,7 @@ def _prev_week_range(offset: int = 1):
 def get_prev_week_food(offset: int = 1) -> list[dict]:
     """Return food rows for a previous Mon–Sun week. offset=1 last week, 2=week before."""
     ws = _sheet(SHEET_FOOD)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     prev_mon, prev_sun = _prev_week_range(offset)
     return [r for r in rows if prev_mon <= _norm_date(r.get("Date", "")) <= prev_sun]
 
@@ -333,7 +353,7 @@ def get_prev_week_food(offset: int = 1) -> list[dict]:
 def get_prev_week_gym(offset: int = 1) -> list[dict]:
     """Return gym rows for a previous Mon–Sun week."""
     ws = _sheet(SHEET_GYM)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     prev_mon, prev_sun = _prev_week_range(offset)
     return [r for r in rows if prev_mon <= _norm_date(r.get("Date", "")) <= prev_sun]
 
@@ -341,7 +361,7 @@ def get_prev_week_gym(offset: int = 1) -> list[dict]:
 def get_prev_week_body(offset: int = 1) -> list[dict]:
     """Return body log rows for a previous Mon–Sun week."""
     ws = _sheet(SHEET_BODY)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     prev_mon, prev_sun = _prev_week_range(offset)
     return [r for r in rows if prev_mon <= _norm_date(r.get("Date", "")) <= prev_sun]
 
@@ -349,7 +369,7 @@ def get_prev_week_body(offset: int = 1) -> list[dict]:
 def get_prev_week_sleep(offset: int = 1) -> list[dict]:
     """Return sleep rows for a previous Mon–Sun week."""
     ws = _sheet(SHEET_SLEEP)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     prev_mon, prev_sun = _prev_week_range(offset)
     return [r for r in rows if prev_mon <= _norm_date(r.get("Date", "")) <= prev_sun]
 
@@ -358,7 +378,7 @@ def get_week_sleep() -> list[dict]:
     """Return sleep rows for the current Mon–Sun week."""
     from datetime import timedelta
     ws = _sheet(SHEET_SLEEP)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     today = date.today()
     week_start = _norm_date((today - timedelta(days=today.weekday())).isoformat())
     return [r for r in rows if _norm_date(r.get("Date", "")) >= week_start]
@@ -372,7 +392,7 @@ def get_strength_exercises_past_weeks(weeks: int = 3) -> list[dict]:
     """
     from datetime import timedelta
     ws_gym = _sheet(SHEET_GYM)
-    rows = ws_gym.get_all_records()
+    rows = _get_records(ws_gym)
     cutoff = _norm_date((date.today() - timedelta(weeks=weeks)).isoformat())
 
     # Collect all strength rows in window
@@ -457,7 +477,7 @@ def get_week_cardio_sessions(min_minutes: int = 30) -> int:
 def get_week_gym() -> list[dict]:
     from datetime import timedelta
     ws = _sheet(SHEET_GYM)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     today = date.today()
     week_start = _norm_date((today - timedelta(days=today.weekday())).isoformat())
     return [r for r in rows if _norm_date(r.get("Date", "")) >= week_start]
@@ -511,7 +531,7 @@ def get_week_body() -> list[dict]:
     """Return body log rows for the current week (Mon–Sun)."""
     from datetime import timedelta
     ws = _sheet(SHEET_BODY)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     today = date.today()
     week_start = _norm_date((today - timedelta(days=today.weekday())).isoformat())
     return [r for r in rows if _norm_date(r.get("Date", "")) >= week_start]
@@ -521,7 +541,7 @@ def get_body_trend(days: int = 7) -> list[dict]:
     """Return last N days of body log rows."""
     from datetime import timedelta
     ws = _sheet(SHEET_BODY)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     cutoff = _norm_date((date.today() - timedelta(days=days)).isoformat())
     return [r for r in rows if _norm_date(r.get("Date", "")) >= cutoff]
 
@@ -529,7 +549,7 @@ def get_body_trend(days: int = 7) -> list[dict]:
 def get_body_by_date(date_str: str) -> dict | None:
     """Return body log row for a specific date, or None."""
     ws = _sheet(SHEET_BODY)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     target = _norm_date(date_str)
     matches = [r for r in rows if _norm_date(r.get("Date", "")) == target]
     return matches[-1] if matches else None
@@ -559,7 +579,7 @@ def get_last_period_start() -> date | None:
     """Return the most recent period start date from Cycle Log."""
     try:
         ws = _sheet(SHEET_CYCLE)
-        rows = ws.get_all_records()
+        rows = _get_records(ws)
         day1_rows = [r for r in rows if str(r.get("Cycle Day", "")).strip() == "1"]
         if not day1_rows:
             return None
@@ -638,7 +658,7 @@ def get_cycle_summary_data() -> dict:
     prev_start = None
     try:
         ws = _sheet(SHEET_CYCLE)
-        rows = ws.get_all_records()
+        rows = _get_records(ws)
         day1_rows = sorted(
             [r for r in rows if str(r.get("Cycle Day", "")).strip() == "1"],
             key=lambda r: r.get("Date", ""),
@@ -655,10 +675,10 @@ def get_cycle_summary_data() -> dict:
         d = str(r.get("Date", ""))
         return d >= cycle_start.strftime("%Y-%m-%d") and d < cycle_end.strftime("%Y-%m-%d")
 
-    emotions = [r for r in _sheet(SHEET_EMOTIONS).get_all_records() if in_cycle(r)]
-    activities = [r for r in _sheet(SHEET_ACTIVITY).get_all_records() if in_cycle(r)]
-    gym = [r for r in _sheet(SHEET_GYM).get_all_records() if in_cycle(r)]
-    food = [r for r in _sheet(SHEET_FOOD).get_all_records() if in_cycle(r)]
+    emotions = [r for r in _get_records(_sheet(SHEET_EMOTIONS)) if in_cycle(r)]
+    activities = [r for r in _get_records(_sheet(SHEET_ACTIVITY)) if in_cycle(r)]
+    gym = [r for r in _get_records(_sheet(SHEET_GYM)) if in_cycle(r)]
+    food = [r for r in _get_records(_sheet(SHEET_FOOD)) if in_cycle(r)]
 
     # Mood by phase
     mood_by_phase: dict = {}
@@ -684,7 +704,7 @@ def get_cycle_summary_data() -> dict:
 def get_exercise_catalogue() -> list[dict]:
     """Return all rows from Exercise Catalogue."""
     ws = _sheet(SHEET_CATALOGUE)
-    return ws.get_all_records()
+    return _get_records(ws)
 
 
 def get_exercises_by_set(set_name: str) -> list[dict]:
@@ -731,7 +751,7 @@ def add_exercise_to_catalogue(
 def update_exercise_set(name: str, set_name: str):
     """Move an exercise to a different set."""
     ws = _sheet(SHEET_CATALOGUE)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     for i, r in enumerate(rows, start=2):  # row 1 = header
         if str(r.get("Exercise Name", "")).lower() == name.lower():
             ws.update_cell(i, 3, set_name)  # col C = Set
@@ -742,7 +762,7 @@ def update_exercise_set(name: str, set_name: str):
 def update_exercise_weight(name: str, weight: float):
     """Update last weight and last used date after a session."""
     ws = _sheet(SHEET_CATALOGUE)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     today = date.today().strftime("%Y-%m-%d")
     for i, r in enumerate(rows, start=2):
         if str(r.get("Exercise Name", "")).lower() == name.lower():
@@ -771,7 +791,7 @@ def get_last_two_weeks_weight(exercise_name: str) -> list[dict]:
     """Return last 2 weeks of gym log rows for this exercise."""
     from datetime import timedelta
     ws = _sheet(SHEET_GYM)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     cutoff = (date.today() - timedelta(days=14)).strftime("%Y-%m-%d")
     return [
         r for r in rows
@@ -819,7 +839,7 @@ def log_content(raw_note: str, week_num: str, pillar: str, angle: str, suggested
 def get_content_log(limit: int = 50) -> list[dict]:
     """Return the most recent content log entries."""
     ws = _sheet(SHEET_CONTENT)
-    rows = ws.get_all_records()
+    rows = _get_records(ws)
     return rows[-limit:] if len(rows) > limit else rows
 
 
