@@ -47,6 +47,23 @@ SHEET_CATALOGUE = "Exercise Catalogue"
 SHEET_BODY = "Body Log"
 SHEET_CONTENT = "Content Log"
 SHEET_REPORTS = "Reports Log"
+SHEET_MICROS  = "Micronutrient Log"
+
+# Female RDAs used for deficit reporting
+MICRO_RDA = {
+    "vitamin_a_ug":  700,
+    "vitamin_c_mg":   75,
+    "vitamin_d_ug":   15,
+    "vitamin_e_mg":   15,
+    "vitamin_b12_ug":  2.4,
+    "folate_ug":     400,
+    "calcium_mg":   1000,
+    "iron_mg":        18,
+    "magnesium_mg":  310,
+    "zinc_mg":         8,
+    "potassium_mg": 2600,
+    "sodium_mg":    2300,
+}
 
 # Body metrics
 HEIGHT_M = 1.64  # metres — used for BMI calculation

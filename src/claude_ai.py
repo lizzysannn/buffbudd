@@ -216,6 +216,34 @@ def generate_food_description(meal_desc: str, calories: int, protein: float) -> 
     return _call(prompt, max_tokens=120, system=BUFF_BUDDY_SYSTEM)
 
 
+# ── Micronutrients ────────────────────────────────────────────────────────────
+
+def estimate_micronutrients(meal_desc: str, items: list) -> dict:
+    """Estimate key micronutrients from a meal. Returns dict with float values."""
+    items_str = "\n".join(f"- {i.get('name','?')} ({i.get('calories',0)}cal)" for i in items) if items else meal_desc
+    prompt = (
+        "Estimate the micronutrient content of this meal. Use standard food composition data.\n"
+        "Return JSON only — no prose, no markdown.\n\n"
+        f"Meal items:\n{items_str}\n\n"
+        "Return this exact JSON (use 0 if negligible or unknown):\n"
+        '{"vitamin_a_ug":0,"vitamin_c_mg":0,"vitamin_d_ug":0,"vitamin_e_mg":0,'
+        '"vitamin_b12_ug":0,"folate_ug":0,"calcium_mg":0,"iron_mg":0,'
+        '"magnesium_mg":0,"zinc_mg":0,"potassium_mg":0,"sodium_mg":0}'
+    )
+    raw = _call(prompt, max_tokens=200)
+    start, end = raw.find("{"), raw.rfind("}") + 1
+    try:
+        data = json.loads(raw[start:end])
+        keys = ["vitamin_a_ug","vitamin_c_mg","vitamin_d_ug","vitamin_e_mg",
+                "vitamin_b12_ug","folate_ug","calcium_mg","iron_mg",
+                "magnesium_mg","zinc_mg","potassium_mg","sodium_mg"]
+        return {k: float(data.get(k, 0)) for k in keys}
+    except Exception:
+        return {k: 0.0 for k in ["vitamin_a_ug","vitamin_c_mg","vitamin_d_ug","vitamin_e_mg",
+                                   "vitamin_b12_ug","folate_ug","calcium_mg","iron_mg",
+                                   "magnesium_mg","zinc_mg","potassium_mg","sodium_mg"]}
+
+
 # ── Gym ───────────────────────────────────────────────────────────────────────
 
 def parse_gym_entry(text: str) -> dict:

@@ -18,7 +18,7 @@ from src import sheets, claude_ai
 from src.config import (
     DEFAULT_CALORIES, DEFAULT_PROTEIN, DEFAULT_CARBS, DEFAULT_FATS,
     DEFAULT_GYM_SESSIONS_WEEK, DEFAULT_CARDIO_SESSIONS_WEEK, DEFAULT_CARDIO_MIN,
-    TELEGRAM_CHAT_ID, HEIGHT_M,
+    TELEGRAM_CHAT_ID, HEIGHT_M, MICRO_RDA,
 )
 
 # Transformation start for week number calculation
@@ -78,11 +78,18 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data.pop("last_meal_entry", None)
         if pending:
             m, mt = pending["macros"], pending["meal_type"]
+            log_date = pending.get("log_date", "")
             breakdown = _items_to_breakdown_str(m.get("items", []))
-            sheets.log_food(m["description"], m["calories"], m["protein"], m["carbs"], m["fats"], mt, pending.get("log_date", ""), m.get("sugar", 0.0), breakdown)
+            sheets.log_food(m["description"], m["calories"], m["protein"], m["carbs"], m["fats"], mt, log_date, m.get("sugar", 0.0), breakdown)
             totals = sheets.get_today_totals()
             msg = _build_food_logged_msg(m, mt, totals)
             await query.edit_message_text(msg, parse_mode="Markdown")
+            # Estimate + log micronutrients in background (non-blocking)
+            try:
+                micros = claude_ai.estimate_micronutrients(m.get("description", ""), m.get("items", []))
+                sheets.log_micronutrients(mt, m.get("description", ""), micros, log_date)
+            except Exception:
+                pass
 
     elif data == "reanalyse_food":
         # User said meals are different — run full Claude analysis on original text
@@ -1414,6 +1421,77 @@ def _weight_trend_lines(current_w: float, today_iso: str) -> list[str]:
     return lines
 
 
+_MICRO_LABELS = {
+    "vitamin_a_ug":  "Vit A",
+    "vitamin_c_mg":  "Vit C",
+    "vitamin_d_ug":  "Vit D",
+    "vitamin_e_mg":  "Vit E",
+    "vitamin_b12_ug":"B12",
+    "folate_ug":     "Folate",
+    "calcium_mg":    "Calcium",
+    "iron_mg":       "Iron",
+    "magnesium_mg":  "Magnesium",
+    "zinc_mg":       "Zinc",
+    "potassium_mg":  "Potassium",
+    "sodium_mg":     "Sodium",
+}
+_MICRO_UNITS = {
+    "vitamin_a_ug":"µg","vitamin_c_mg":"mg","vitamin_d_ug":"µg","vitamin_e_mg":"mg",
+    "vitamin_b12_ug":"µg","folate_ug":"µg","calcium_mg":"mg","iron_mg":"mg",
+    "magnesium_mg":"mg","zinc_mg":"mg","potassium_mg":"mg","sodium_mg":"mg",
+}
+
+
+def _micro_summary_lines(date_str: str) -> list[str]:
+    """Return micronutrient summary lines for a given date."""
+    try:
+        rows = sheets.get_micros_by_date(date_str)
+        if not rows:
+            return []
+        # Sum all meals
+        totals = {k: 0.0 for k in MICRO_RDA}
+        for r in rows:
+            for k in totals:
+                col = _MICRO_LABELS[k]
+                # Try both column name formats
+                for key in [k, col]:
+                    if key in r:
+                        try:
+                            totals[k] += float(r[key] or 0)
+                        except (ValueError, TypeError):
+                            pass
+                        break
+        lines = ["🔬 *Micros (estimated)*"]
+        good, low, watch = [], [], []
+        for k, rda in MICRO_RDA.items():
+            val = totals[k]
+            pct = val / rda if rda else 0
+            label = _MICRO_LABELS[k]
+            unit  = _MICRO_UNITS[k]
+            entry = f"{label} {val:.0f}{unit} ({int(pct*100)}%)"
+            if k == "sodium_mg":
+                if val > rda:
+                    watch.append(f"{label} {val:.0f}{unit} ⚠️ over")
+                else:
+                    good.append(entry + " ✅")
+            elif pct >= 0.7:
+                good.append(entry + " ✅")
+            elif pct >= 0.4:
+                watch.append(entry + " 〜")
+            else:
+                low.append(entry + " ↓")
+        if low:
+            lines.append("Likely low: " + " · ".join(low))
+        if watch:
+            lines.append("Watch: " + " · ".join(watch))
+        if good:
+            lines.append("Covered: " + " · ".join(good))
+        lines.append("_Estimates only — real values vary by source & cooking_")
+        return lines
+    except Exception:
+        return []
+
+
 def _sleep_time_str(sleep_row: dict) -> str:
     """Format sleep time display: hours + optional bedtime→wake."""
     h = float(sleep_row.get("Hours", 0))
@@ -1537,6 +1615,12 @@ async def _fetch_and_show_stats(log_date: str, reply):
             lines.append("Weekly target hit ✅")
         else:
             lines.append(f"{gym_needed} more needed · {days_left} day{'s' if days_left != 1 else ''} left")
+
+        # ── Micronutrients ────────────────────────────────────────────────────
+        micro_lines = _micro_summary_lines(log_date)
+        if micro_lines:
+            lines.append("")
+            lines.extend(micro_lines)
 
         # Show "Done for Day" button only on today's stats
         kb = None
@@ -1744,6 +1828,12 @@ async def _handle_done_for_day(reply):
         lines.append(f"  🥩 Protein: {days_pro_hit}/{days_logged} days on target {pro_tick}")
         lines.append(f"  😴 Sleep 7h+: {days_sleep_hit}/{days_sleep_logged} days {sleep_tick}")
         lines.append("")
+
+        # ── Micronutrients ────────────────────────────────────────────────────
+        micro_lines = _micro_summary_lines(today_str)
+        if micro_lines:
+            lines.extend(micro_lines)
+            lines.append("")
 
         # ── Coach push ────────────────────────────────────────────────────────
         sleep_detail = "not logged"

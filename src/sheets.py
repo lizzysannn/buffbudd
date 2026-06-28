@@ -10,7 +10,7 @@ from src.config import (
     COACH_NUTRITION_DOC_ID, COACH_TRAINING_DOC_ID, WEEKLY_GOALS_DOC_ID,
     SHEET_FOOD, SHEET_GYM, SHEET_SLEEP, SHEET_SUMMARY,
     SHEET_EMOTIONS, SHEET_ACTIVITY, SHEET_CYCLE, SHEET_CATALOGUE,
-    SHEET_BODY, SHEET_CONTENT, SHEET_REPORTS, HEIGHT_M,
+    SHEET_BODY, SHEET_CONTENT, SHEET_REPORTS, SHEET_MICROS, HEIGHT_M,
 )
 
 SCOPES = [
@@ -820,6 +820,51 @@ def log_reflection(note: str, log_date: str = "") -> None:
     days = (today - transform_start).days
     week_num = f"Week {max(1, days // 7 + 1)}"
     log_content(note, week_num, "Reflection", "Do Better", "", log_date)
+
+
+def log_micronutrients(meal_type: str, meal_desc: str, micros: dict, log_date: str = "") -> None:
+    """Append a micronutrient estimate row for a logged meal."""
+    ws = _sheet(SHEET_MICROS)
+    now = datetime.now()
+    row_date = log_date or now.strftime("%Y-%m-%d")
+    row_time = now.strftime("%H:%M") if not log_date else ""
+    ws.append_row([
+        row_date, row_time, meal_type, meal_desc,
+        micros.get("vitamin_a_ug", 0),
+        micros.get("vitamin_c_mg", 0),
+        micros.get("vitamin_d_ug", 0),
+        micros.get("vitamin_e_mg", 0),
+        micros.get("vitamin_b12_ug", 0),
+        micros.get("folate_ug", 0),
+        micros.get("calcium_mg", 0),
+        micros.get("iron_mg", 0),
+        micros.get("magnesium_mg", 0),
+        micros.get("zinc_mg", 0),
+        micros.get("potassium_mg", 0),
+        micros.get("sodium_mg", 0),
+    ])
+
+
+def get_micros_by_date(date_str: str) -> list[dict]:
+    """Return all micronutrient rows for a given date."""
+    ws = _sheet(SHEET_MICROS)
+    rows = ws.get_all_records()
+    target = _norm_date(date_str)
+    return [r for r in rows if _norm_date(r.get("Date", "")) == target]
+
+
+def get_today_micros() -> list[dict]:
+    return get_micros_by_date(date.today().isoformat())
+
+
+def get_week_micros() -> list[dict]:
+    """Return micronutrient rows for the current week (Mon–today)."""
+    from datetime import timedelta
+    ws = _sheet(SHEET_MICROS)
+    rows = ws.get_all_records()
+    today = date.today()
+    week_start = _norm_date((today - timedelta(days=today.weekday())).isoformat())
+    return [r for r in rows if _norm_date(r.get("Date", "")) >= week_start]
 
 
 def log_report(report_type: str, date_range: str, output: str) -> None:
