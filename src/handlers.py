@@ -530,7 +530,8 @@ async def _log_meal_text(text: str, reply, ctx=None, meal_type: str = ""):
         msg = _build_food_preview(macros, resolved_type) + date_note
         await reply(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard("food"))
     except Exception as e:
-        log.error(traceback.format_exc()); await reply(_safe_error(e, "meal logging"))
+        log.error(traceback.format_exc())
+        await reply(f"Meal logging error: {type(e).__name__}: {e}")
 
 
 # ── Exercise catalogue handlers ───────────────────────────────────────────────
