@@ -80,12 +80,14 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             m, mt = pending["macros"], pending["meal_type"]
             log_date = pending.get("log_date", "")
             breakdown = _items_to_breakdown_str(m.get("items", []))
-            # Estimate micros silently before writing the row
+            # Estimate micros before writing the row
             micros = None
+            _micro_err = None
             try:
                 micros = claude_ai.estimate_micronutrients(m.get("description", ""), m.get("items", []))
-            except Exception:
-                pass
+            except Exception as _e:
+                _micro_err = str(_e)
+                log.warning(f"micro estimation failed: {_micro_err}")
             sheets.log_food(m["description"], m["calories"], m["protein"], m["carbs"], m["fats"],
                             mt, log_date, m.get("sugar", 0.0), breakdown, micros=micros)
             totals = sheets.get_today_totals()
@@ -1287,10 +1289,12 @@ def _build_food_logged_msg(macros: dict, meal_type: str, totals: dict, micros: d
                 pct = val / rda
                 label = _MICRO_LABELS[k]
                 unit  = _MICRO_UNITS[k]
-                if pct >= 0.2:
+                if pct >= 0.05:
                     high.append(f"{label} {val:.0f}{unit} ({int(pct*100)}%)")
         if high:
             lines.append("\n🔬 *Micros this meal:* " + " · ".join(high))
+        else:
+            lines.append("\n🔬 _Micros: estimated but all negligible_")
 
     return "\n".join(lines)
 
