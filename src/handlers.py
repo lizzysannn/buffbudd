@@ -1480,6 +1480,20 @@ _MICRO_UNITS = {
     "magnesium_mg":"mg","zinc_mg":"mg","potassium_mg":"mg","sodium_mg":"mg",
 }
 # Maps internal key → actual column header in the Food Log sheet
+_MICRO_ROLES = {
+    "vitamin_a_ug":  "Vision, skin, immunity",
+    "vitamin_c_mg":  "Collagen, immunity, absorption",
+    "vitamin_d_ug":  "Bones, mood, immunity",
+    "vitamin_e_mg":  "Antioxidant, cell protection",
+    "vitamin_b12_ug":"Nerves, energy, blood",
+    "folate_ug":     "DNA, cell repair",
+    "calcium_mg":    "Bones, muscle contraction",
+    "iron_mg":       "Oxygen, energy, endurance",
+    "magnesium_mg":  "Recovery, sleep, nerves",
+    "zinc_mg":       "Repair, immunity, hormones",
+    "potassium_mg":  "Electrolytes, muscle function",
+    "sodium_mg":     "Fluid balance, nerves",
+}
 _MICRO_SHEET_COL = {
     "vitamin_a_ug":  "Vitamin A (µg)",
     "vitamin_c_mg":  "Vitamin C (mg)",
@@ -1496,13 +1510,13 @@ _MICRO_SHEET_COL = {
 }
 
 
-def _micro_summary_lines(date_str: str) -> list[str]:
+def _micro_summary_lines(date_str: str, contributors: dict | None = None) -> list[str]:
     """Return micronutrient summary lines for a given date."""
     try:
         rows = sheets.get_micros_by_date(date_str)
         if not rows:
             return []
-        # Sum all meals — try sheet column name first, then internal key as fallback
+        # Sum all meals
         totals = {k: 0.0 for k in MICRO_RDA}
         for r in rows:
             for k in totals:
@@ -1510,31 +1524,25 @@ def _micro_summary_lines(date_str: str) -> list[str]:
                     totals[k] += float(r.get(_MICRO_SHEET_COL.get(k, k)) or 0)
                 except (ValueError, TypeError):
                     pass
+
         lines = ["🔬 *Micros (estimated)*"]
-        good, low, watch = [], [], []
         for k, rda in MICRO_RDA.items():
             val = totals[k]
             pct = val / rda if rda else 0
             label = _MICRO_LABELS[k]
             unit  = _MICRO_UNITS[k]
-            entry = f"{label} {val:.0f}{unit} ({int(pct*100)}%)"
+            role  = _MICRO_ROLES[k]
             if k == "sodium_mg":
-                if val > rda:
-                    watch.append(f"{label} {val:.0f}{unit} ⚠️ over")
-                else:
-                    good.append(entry + " ✅")
+                icon = "⚠️" if val > rda else "✅"
             elif pct >= 0.7:
-                good.append(entry + " ✅")
+                icon = "✅"
             elif pct >= 0.4:
-                watch.append(entry + " 〜")
+                icon = "〜"
             else:
-                low.append(entry + " ↓")
-        if low:
-            lines.append("Likely low: " + " · ".join(low))
-        if watch:
-            lines.append("Watch: " + " · ".join(watch))
-        if good:
-            lines.append("Covered: " + " · ".join(good))
+                icon = "↓"
+            contrib = contributors.get(k, "") if contributors else ""
+            ate_str = f" · _Ate: {contrib}_" if contrib and contrib != "-" else ""
+            lines.append(f"{icon} *{label}* — {val:.0f}{unit} ({int(pct*100)}%) · {role}{ate_str}")
         lines.append("_Estimates only — real values vary by source & cooking_")
         return lines
     except Exception:
@@ -1788,22 +1796,18 @@ async def _handle_done_for_day(reply):
             lines.append("_Nothing logged today._")
         lines.append("")
 
-        # ── Strength + Cardio: separate lines ────────────────────────────────
+        # ── Strength + Cardio: combined line ─────────────────────────────────
         strength_rows = [r for r in gym_rows if str(r.get("Type", "strength")).lower() != "cardio"]
         cardio_rows   = [r for r in gym_rows if str(r.get("Type", "")).lower() == "cardio"]
         cardio_mins   = sum(int(r.get("Duration (min)", 0) or 0) for r in cardio_rows)
 
-        lines.append("💪 *Strength*")
-        lines.append("✅ Session logged" if strength_rows else "Rest day")
-        lines.append("")
-
-        lines.append("🏃 *Cardio*")
-        if cardio_rows and cardio_mins > 0:
-            lines.append(f"{cardio_mins}min ✅")
-        elif cardio_rows:
-            lines.append("Logged (no duration)")
+        s_part = "✅ Strength" if strength_rows else "—"
+        if cardio_rows:
+            c_part = f"✅ Cardio {cardio_mins}min" if cardio_mins > 0 else "✅ Cardio"
         else:
-            lines.append("Rest day")
+            c_part = "— Cardio rest"
+        lines.append(f"💪 *Strength* / 🏃 *Cardio*")
+        lines.append(f"{s_part} · {c_part}")
         lines.append("")
 
         # ── Sleep: one line ───────────────────────────────────────────────────
@@ -1879,7 +1883,13 @@ async def _handle_done_for_day(reply):
         lines.append("")
 
         # ── Micronutrients ────────────────────────────────────────────────────
-        micro_lines = _micro_summary_lines(today_str)
+        food_names = [str(r.get("Meal", "")) for r in food_rows if r.get("Meal")]
+        micro_contributors: dict = {}
+        try:
+            micro_contributors = claude_ai.identify_micro_contributors(food_names)
+        except Exception:
+            pass
+        micro_lines = _micro_summary_lines(today_str, contributors=micro_contributors)
         if micro_lines:
             lines.extend(micro_lines)
             lines.append("")

@@ -244,6 +244,27 @@ def estimate_micronutrients(meal_desc: str, items: list) -> dict:
                                    "magnesium_mg","zinc_mg","potassium_mg","sodium_mg"]}
 
 
+def identify_micro_contributors(food_list: list[str]) -> dict:
+    """Given today's food items, return which foods contributed to each micro. JSON only."""
+    foods = ", ".join(food_list) if food_list else "unknown"
+    prompt = (
+        "From this list of foods eaten today, identify the 1-3 main food contributors for each micronutrient.\n"
+        "Use short names (e.g. 'eggs', 'brown rice', 'chicken'). If none contributed meaningfully, write '-'.\n"
+        "Return JSON only — no prose, no markdown.\n\n"
+        f"Foods: {foods}\n\n"
+        'Return this exact JSON:\n'
+        '{"vitamin_a_ug":"","vitamin_c_mg":"","vitamin_d_ug":"","vitamin_e_mg":"",'
+        '"vitamin_b12_ug":"","folate_ug":"","calcium_mg":"","iron_mg":"",'
+        '"magnesium_mg":"","zinc_mg":"","potassium_mg":"","sodium_mg":""}'
+    )
+    raw = _call(prompt, max_tokens=300)
+    start, end = raw.find("{"), raw.rfind("}") + 1
+    try:
+        return json.loads(raw[start:end])
+    except Exception:
+        return {}
+
+
 # ── Gym ───────────────────────────────────────────────────────────────────────
 
 def parse_gym_entry(text: str) -> dict:
@@ -329,22 +350,19 @@ def generate_end_of_day_coaching(day_summary: str, week_summary: str, yesterday_
         f"Today: {day_summary}{yesterday_block}\n"
         f"Week so far: {week_summary}"
         f"{multi_day_block}\n\n"
-        "Write a 4-6 line scientist review. Your job is to educate her about her own body by finding patterns in the data.\n\n"
-        "Rules:\n"
-        "— Identify at least ONE multi-day pattern (not just today vs yesterday). "
-        "Example: 'your sleep has averaged 6.1h this week — on those days your sugar intake was consistently higher, "
-        "which is a documented cortisol-driven craving response'\n"
-        "— Connect at least TWO pillars causally: nutrition ↔ energy, sleep ↔ recovery, "
-        "protein timing ↔ gym performance, micronutrient gaps ↔ fatigue tags, sugar ↔ mood\n"
-        "— Teach her something specific about the biology behind what you see — "
-        "explain WHY the pattern matters, not just that it exists\n"
-        "— Name one thing she is doing right and what it's doing for her body (specific)\n"
-        "— End with ONE testable experiment for tomorrow or this week: "
-        "something she can observe in her own body to build awareness "
-        "(e.g. 'tomorrow eat 30g protein within 60 min of waking — note your hunger at noon')\n\n"
+        "Write a scientist-coach review in 4 clearly separated parts (label each with **bold**):\n\n"
+        "**General Summary** (2-3 lines): Synthesise today across all pillars — food, training, sleep, micros, weight. "
+        "Find the ONE story that connects them. Be specific with numbers.\n\n"
+        "**Watch** (1-2 callouts): Name specific patterns that need attention, backed by longitudinal data (not just today). "
+        "Teach the biology WHY it matters. E.g. 'Iron has been under 50% for 4 of 5 days — this blunts oxygen delivery to muscle during cardio, "
+        "which shows up as earlier fatigue and slower recovery.'\n\n"
+        "**What's working** (1-2 lines): Name one specific thing she's doing right and what it's doing for her body at a cellular/hormonal level. "
+        "Not generic. Tie it to her actual numbers.\n\n"
+        "**Food Sources** (1 line): Based on any micro gaps flagged today, suggest 2-3 specific foods she can add this week. "
+        "Keep it practical and realistic to her eating style.\n\n"
         "Tone: warm scientist. Precise but not clinical. Like a coach who also has a PhD. No fluff, no generic praise."
     )
-    return _call(prompt, max_tokens=380)
+    return _call(prompt, max_tokens=520)
 
 
 def generate_daily_summary_note(context: str, missing: list[str], yesterday_context: str = "") -> str:
