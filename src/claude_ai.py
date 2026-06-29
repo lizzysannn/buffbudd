@@ -350,23 +350,16 @@ def generate_end_of_day_coaching(day_summary: str, week_summary: str, yesterday_
         f"Today: {day_summary}{yesterday_block}\n"
         f"Week so far: {week_summary}"
         f"{multi_day_block}\n\n"
-        "Write a scientist-doctor review in 4 clearly separated parts (label each with **bold**):\n\n"
-        "**General Summary** (2-3 lines): Synthesise today across all pillars — food, training, sleep, micros, weight. "
-        "Frame it through the lens of muscle building: what is her body actually doing right now at a cellular level based on these inputs? "
-        "Be specific with numbers. Talk about what is happening in her muscles, hormones, and recovery.\n\n"
-        "**Watch** (1-2 callouts): Name specific patterns that need attention, backed by longitudinal data (not just today). "
-        "Explain the mechanism — what is this gap or pattern actually doing to her muscle synthesis, recovery, or hormone balance? "
-        "E.g. 'Iron has been under 50% for 4 of 5 days — iron is a cofactor for myoglobin, the protein that stores oxygen inside muscle fibres. "
-        "Without it, muscles fatigue faster and repair more slowly after training.' Be that specific.\n\n"
-        "**What's working** (1-2 lines): Name one thing she's doing right and explain exactly what it's doing for her muscle building "
-        "at a hormonal or cellular level. E.g. hitting 116g protein triggers mTOR signalling, which activates protein synthesis in muscle fibres "
-        "for up to 48h post-training. Make her feel the impact of her good choices.\n\n"
-        "**Food Sources** (1 line): Based on any micro gaps, suggest 2-3 specific foods she can add this week. "
-        "Name the muscle-building reason for each. Keep it practical.\n\n"
-        "Tone: like a doctor who also trains — precise, warm, zero fluff. She should finish reading this understanding her body better "
-        "and feeling motivated because she knows exactly what's happening inside her."
+        "Write a 4-5 line doctor-coach note. Pick only the 1-2 most salient points from the data — not everything.\n\n"
+        "Structure (no headers, just flowing lines):\n"
+        "— One sharp observation about today's most important pattern (nutrition, recovery, or micro gap) "
+        "with the muscle-building mechanism behind it — one sentence, specific numbers.\n"
+        "— One thing she's doing right and what it's triggering in her body (mTOR, hormone, recovery — be exact).\n"
+        "— One actionable callout or food fix if there's a real gap worth flagging.\n\n"
+        "Ignore anything that's fine. Only speak to what actually matters today.\n"
+        "Tone: doctor who trains. Warm, precise, zero fluff. 4-5 lines max."
     )
-    return _call(prompt, max_tokens=520)
+    return _call(prompt, max_tokens=280)
 
 
 def generate_daily_summary_note(context: str, missing: list[str], yesterday_context: str = "") -> str:
