@@ -218,7 +218,7 @@ def get_today_micro_totals() -> dict:
 
 # ── Gym Log ───────────────────────────────────────────────────────────────────
 
-def log_gym(exercise: str, sets: int, reps: int, weight: float, rpe: float | None, notes: str = "", log_date: str = "", exercise_type: str = "strength", duration_min: int = 0, distance_km: float = 0):
+def log_gym(exercise: str, sets: int, reps: int, weight: float, rpe: float | None, notes: str = "", log_date: str = "", exercise_type: str = "strength", duration_min: int = 0, distance_km: float = 0, steps: int = 0):
     ws = _sheet(SHEET_GYM)
     now = datetime.now()
     row_date = log_date or now.strftime("%Y-%m-%d")
@@ -232,9 +232,10 @@ def log_gym(exercise: str, sets: int, reps: int, weight: float, rpe: float | Non
         weight,
         rpe if rpe else "",
         notes,
-        exercise_type,            # col I — "strength" or "cardio"
+        exercise_type,            # col I — "strength", "cardio", or "steps"
         duration_min if duration_min else "",  # col J — minutes (cardio only)
         distance_km if distance_km else "",    # col K — km (runs only)
+        steps if steps else "",               # col L — step count
     ])
 
 
@@ -479,27 +480,38 @@ def get_week_gym_days() -> int:
     })
 
 
-def get_week_cardio_sessions(min_minutes: int = 30) -> int:
-    """Return number of cardio sessions ≥ min_minutes this week."""
+def get_week_cardio_sessions(min_minutes: int = 20) -> int:
+    """Return number of days with cardio ≥ min_minutes OR ≥ 10k steps this week."""
     import re as _re
     from collections import defaultdict
     _dur_re = _re.compile(r'(\d+)\s*min', _re.IGNORECASE)
     rows = get_week_gym()
-    # Sum cardio duration per day, count days that hit the threshold
     day_duration: dict[str, int] = defaultdict(int)
+    day_steps: dict[str, int] = defaultdict(int)
     for r in rows:
-        if str(r.get("Type", "")).lower() == "cardio":
+        row_type = str(r.get("Type", "")).lower()
+        date_key = _norm_date(r.get("Date", ""))
+        if row_type == "cardio":
             try:
                 dur = int(r.get("Duration (min)", 0) or 0)
-                # Fallback: parse duration from Notes if duration column is empty
                 if dur == 0:
                     m = _dur_re.search(str(r.get("Notes", "")))
                     if m:
                         dur = int(m.group(1))
-                day_duration[_norm_date(r.get("Date", ""))] += dur
+                day_duration[date_key] += dur
             except (ValueError, TypeError):
                 pass
-    return sum(1 for d in day_duration.values() if d >= min_minutes)
+        elif row_type == "steps":
+            try:
+                s = int(str(r.get("Steps", "") or r.get("Notes", "") or "0").replace(",", "").split()[0])
+                day_steps[date_key] = max(day_steps[date_key], s)
+            except (ValueError, TypeError):
+                pass
+    all_days = set(day_duration) | set(day_steps)
+    return sum(
+        1 for d in all_days
+        if day_duration.get(d, 0) >= min_minutes or day_steps.get(d, 0) >= 10000
+    )
 
 
 def get_week_gym() -> list[dict]:

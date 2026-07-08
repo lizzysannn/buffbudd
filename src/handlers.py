@@ -413,6 +413,10 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await reply("🏃 What cardio and how long? e.g. 'bike 30min', 'swimming 45min', 'reformer cardio 20min'")
             ctx.user_data["awaiting_menu_log"] = "gym_cardio_other_notes"
 
+        elif data == "gym_steps":
+            await query.edit_message_text("👟 How many steps today?")
+            ctx.user_data["awaiting_menu_log"] = "gym_steps_count"
+
         # Legacy callbacks — kept for safety
         elif data == "gym_cardio_gym":
             await reply("🪜 How long and what? (e.g. '30min stairmaster', '20min incline walk')")
@@ -676,6 +680,7 @@ def _gym_type_keyboard() -> InlineKeyboardMarkup:
          InlineKeyboardButton("🏃 Cardio Run",     callback_data="gym_cardio_run")],
         [InlineKeyboardButton("🪜 Cardio Stairmaster", callback_data="gym_cardio_stairmaster"),
          InlineKeyboardButton("➕ Cardio Other",   callback_data="gym_cardio_other")],
+        [InlineKeyboardButton("👟 Steps",           callback_data="gym_steps")],
     ])
 
 
@@ -1061,6 +1066,13 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             notes = text.strip()
             sheets.log_gym("Cardio Other", 0, 0, 0, None, notes, "", "cardio", dur)
             await reply(f"🏃 Cardio logged{f' — {dur}min' if dur else ''}. Strong work!")
+        elif mode == "gym_steps_count":
+            steps_m = re.search(r'[\d,]+', text.replace(",", ""))
+            steps = int(steps_m.group().replace(",", "")) if steps_m else 0
+            notes = f"{steps:,} steps"
+            sheets.log_gym("Steps", 0, 0, 0, None, notes, "", "steps", 0, steps=steps)
+            tick = "✅ 10k hit!" if steps >= 10000 else f"({10000 - steps:,} to 10k)"
+            await reply(f"👟 {notes} logged. {tick}")
         return
 
     # Weekly summary fast-path — catches "weeklysummary", "weekly summary", "/weeklysummary" as text
