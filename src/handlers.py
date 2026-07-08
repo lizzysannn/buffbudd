@@ -16,7 +16,7 @@ def _safe_error(e: Exception, context: str = "") -> str:
 from telegram.ext import ContextTypes, CallbackQueryHandler
 from src import sheets, claude_ai
 from src.config import (
-    DEFAULT_CALORIES, DEFAULT_PROTEIN, DEFAULT_CARBS, DEFAULT_FATS,
+    DEFAULT_CALORIES, DEFAULT_PROTEIN, DEFAULT_CARBS, DEFAULT_FATS, DEFAULT_SUGAR,
     DEFAULT_GYM_SESSIONS_WEEK, DEFAULT_CARDIO_SESSIONS_WEEK, DEFAULT_CARDIO_MIN,
     TELEGRAM_CHAT_ID, HEIGHT_M, MICRO_RDA,
 )
@@ -134,7 +134,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             breakdown = str(last.get("Breakdown", ""))
             sheets.log_food(meal_desc, cal, pro, carbs, fats, meal_type, log_date, sugar, breakdown)
             totals = sheets.get_today_totals()
-            SUGAR_TARGET = 25.0
+            SUGAR_TARGET = DEFAULT_SUGAR
             cal_left = DEFAULT_CALORIES - totals["calories"]
             pro_left = DEFAULT_PROTEIN - totals["protein"]
             t_sugar  = totals["sugar"]
@@ -1230,7 +1230,7 @@ def _items_to_breakdown_str(items: list) -> str:
 
 def _build_food_logged_msg(macros: dict, meal_type: str, totals: dict, micros: dict | None = None, day_micros: dict | None = None) -> str:
     """Confirmation message shown after a meal is logged — full macros per item + running day totals."""
-    SUGAR_TARGET = 25.0
+    SUGAR_TARGET = DEFAULT_SUGAR
     items = macros.get("items", [])
     note = macros.get("note", "")
     header = f"✅ *{meal_type.capitalize()} logged*"
@@ -1355,7 +1355,7 @@ async def _handle_food_query(text: str, reply):
         lines.append(f"\n*Total: {total_cal} cal · {total_pro:.0f}g protein · {total_carbs:.0f}g carbs · {total_fats:.0f}g fat · {total_sugar:.0f}g sugar*")
 
         # Gap vs targets
-        SUGAR_TARGET = 25.0
+        SUGAR_TARGET = DEFAULT_SUGAR
         cal_gap = DEFAULT_CALORIES - total_cal
         pro_gap = DEFAULT_PROTEIN - total_pro
         sugar_gap = SUGAR_TARGET - total_sugar
@@ -1589,7 +1589,7 @@ async def _fetch_and_show_stats(log_date: str, reply):
 
             cal_gap = DEFAULT_CALORIES - total_cal
             pro_gap = DEFAULT_PROTEIN - total_pro
-            SUGAR_TARGET = 25.0
+            SUGAR_TARGET = DEFAULT_SUGAR
 
             lines.append("🍱 *Food*")
             # Compact per-meal breakdown
@@ -1758,7 +1758,7 @@ async def _handle_done_for_day(reply):
         today_str = today.isoformat()
         yesterday_str = (today - timedelta(days=1)).isoformat()
         days_left = 7 - today.weekday()
-        SUGAR_TARGET = 25.0
+        SUGAR_TARGET = DEFAULT_SUGAR
 
         food_rows  = sheets.get_today_food()
         gym_rows   = sheets.get_today_gym()
@@ -2011,7 +2011,7 @@ async def _handle_quest_check(reply):
         avg_cal  = sum(int(r.get("Calories", 0)) for r in food_week) / food_days
         avg_pro  = sum(float(r.get("Protein", 0)) for r in food_week) / food_days
         avg_sugar = sum(sheets._get_sugar(r) for r in food_week) / food_days
-        SUGAR_TARGET = 25.0
+        SUGAR_TARGET = DEFAULT_SUGAR
 
         cal_status = "✅" if avg_cal <= DEFAULT_CALORIES else f"⚠️ avg {avg_cal:.0f} (over by {avg_cal - DEFAULT_CALORIES:.0f})"
         pro_status = "✅" if avg_pro >= DEFAULT_PROTEIN else f"❌ avg {avg_pro:.0f}g (need +{DEFAULT_PROTEIN - avg_pro:.0f}g/day)"

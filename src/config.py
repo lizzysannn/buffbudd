@@ -21,15 +21,16 @@ COACH_NUTRITION_DOC_ID = os.environ["COACH_NUTRITION_DOC_ID"]
 COACH_TRAINING_DOC_ID = os.environ["COACH_TRAINING_DOC_ID"]
 WEEKLY_GOALS_DOC_ID = os.environ["WEEKLY_GOALS_DOC_ID"]
 
-# Macro targets — tweak these or make them dynamic via /setgoals
-DEFAULT_CALORIES = 1200
-DEFAULT_PROTEIN = 115   # grams
-DEFAULT_CARBS = 101     # grams
-DEFAULT_FATS = 32       # grams
+# Macro targets
+DEFAULT_CALORIES = 1500
+DEFAULT_PROTEIN = 130   # grams
+DEFAULT_CARBS = 170     # grams
+DEFAULT_FATS = 45       # grams
+DEFAULT_SUGAR = 40      # grams
 
 # Weekly gym target (Mon–Sun)
 DEFAULT_GYM_SESSIONS_WEEK = 3
-DEFAULT_CARDIO_SESSIONS_WEEK = 2   # sessions ≥ 20 min
+DEFAULT_CARDIO_SESSIONS_WEEK = 7   # 10k steps or cardio session every day
 DEFAULT_CARDIO_MIN = 20            # minimum minutes to count as a cardio session
 
 # Timezone
