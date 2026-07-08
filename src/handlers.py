@@ -1067,13 +1067,20 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             sheets.log_gym("Cardio Other", 0, 0, 0, None, notes, "", "cardio", dur)
             await reply(f"🏃 Cardio logged{f' — {dur}min' if dur else ''}. Strong work!")
         elif mode == "gym_steps_count":
-            steps_m = re.search(r'[\d,]+', text.replace(",", ""))
-            steps = int(steps_m.group().replace(",", "")) if steps_m else 0
-            notes = f"{steps:,} steps"
-            sheets.log_gym("Steps", 0, 0, 0, None, notes, "", "steps", 0, steps=steps)
-            tick = "✅ 10k hit!" if steps >= 10000 else f"({10000 - steps:,} to 10k)"
-            await reply(f"👟 {notes} logged. {tick}")
+            steps, log_date = _parse_steps_and_date(text)
+            if steps == 0:
+                await reply("Didn't catch the number — how many steps?")
+                return
+            _log_steps(steps, log_date, reply)
+            return
         return
+
+    # Steps fast-path — "14k steps", "walked 12000", "yesterday 14k steps" etc.
+    if re.search(r'\bsteps?\b', text, re.IGNORECASE) or re.search(r'\b(walked|walking)\b.*\d', text, re.IGNORECASE):
+        steps, log_date = _parse_steps_and_date(text)
+        if steps > 0:
+            await _log_steps(steps, log_date, reply)
+            return
 
     # Weekly summary fast-path — catches "weeklysummary", "weekly summary", "/weeklysummary" as text
     if re.search(r"weekly\s*summary|weeklysummary", text, re.IGNORECASE):
@@ -1559,6 +1566,33 @@ def _micro_summary_lines(date_str: str, contributors: dict | None = None) -> lis
         return lines
     except Exception:
         return []
+
+
+def _parse_steps_and_date(text: str) -> tuple[int, str]:
+    """Extract step count and optional log date from free text. Returns (steps, log_date)."""
+    from datetime import date, timedelta
+    # Date: yesterday / today
+    lower = text.lower()
+    if re.search(r'\byesterday\b|\byest\b', lower):
+        log_date = (date.today() - timedelta(days=1)).isoformat()
+    else:
+        log_date = ""
+    # Steps: support "14k", "14,000", "14000"
+    m = re.search(r'([\d,]+\.?\d*)\s*k\b', text, re.IGNORECASE)
+    if m:
+        steps = int(float(m.group(1).replace(",", "")) * 1000)
+    else:
+        m = re.search(r'[\d,]+', text.replace(",", ""))
+        steps = int(m.group().replace(",", "")) if m else 0
+    return steps, log_date
+
+
+async def _log_steps(steps: int, log_date: str, reply):
+    notes = f"{steps:,} steps"
+    sheets.log_gym("Steps", 0, 0, 0, None, notes, log_date, "steps", 0, steps=steps)
+    tick = "✅ 10k hit!" if steps >= 10000 else f"({10000 - steps:,} to 10k)"
+    date_note = " (logged for yesterday)" if log_date else ""
+    await reply(f"👟 {notes} logged{date_note}. {tick}")
 
 
 def _sleep_time_str(sleep_row: dict) -> str:
