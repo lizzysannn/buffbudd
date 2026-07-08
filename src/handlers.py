@@ -1808,16 +1808,22 @@ async def _handle_done_for_day(reply):
             lines.append("_Nothing logged today._")
         lines.append("")
 
-        # ── Strength + Cardio: combined line ─────────────────────────────────
-        strength_rows = [r for r in gym_rows if str(r.get("Type", "strength")).lower() != "cardio"]
+        # ── Strength + Cardio + Steps: combined line ─────────────────────────
+        strength_rows = [r for r in gym_rows if str(r.get("Type", "")).lower() not in ("cardio", "steps")]
         cardio_rows   = [r for r in gym_rows if str(r.get("Type", "")).lower() == "cardio"]
+        steps_rows    = [r for r in gym_rows if str(r.get("Type", "")).lower() == "steps"]
         cardio_mins   = sum(int(r.get("Duration (min)", 0) or 0) for r in cardio_rows)
+        today_steps   = max((int(str(r.get("Steps") or r.get("Notes", "0")).replace(",", "").split()[0]) for r in steps_rows), default=0)
 
         s_part = "✅ Strength" if strength_rows else "—"
-        if cardio_rows:
+        if cardio_rows and steps_rows:
+            c_part = f"✅ Cardio {cardio_mins}min · 👟 {today_steps:,} steps {'✅' if today_steps >= 10000 else ''}"
+        elif cardio_rows:
             c_part = f"✅ Cardio {cardio_mins}min" if cardio_mins > 0 else "✅ Cardio"
+        elif steps_rows:
+            c_part = f"👟 {today_steps:,} steps {'✅' if today_steps >= 10000 else f'({10000-today_steps:,} to 10k)'}"
         else:
-            c_part = "— Cardio rest"
+            c_part = "— rest"
         lines.append(f"💪 *Strength* / 🏃 *Cardio*")
         lines.append(f"{s_part} · {c_part}")
         lines.append("")
